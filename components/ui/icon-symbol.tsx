@@ -18,6 +18,22 @@ const MAPPING = {
   "paperplane.fill": "send",
   "chevron.left.forwardslash.chevron.right": "code",
   "chevron.right": "chevron-right",
+  // 積み上げアプリ用アイコン
+  "chart.bar.fill": "bar-chart",
+  "gearshape.fill": "settings",
+  "plus": "add",
+  "play.fill": "play-arrow",
+  "stop.fill": "stop",
+  "pause.fill": "pause",
+  "plus.circle.fill": "add-circle",
+  "minus.circle.fill": "remove-circle",
+  "trash.fill": "delete",
+  "pencil": "edit",
+  "clock.fill": "access-time",
+  "number": "tag",
+  "checkmark.circle.fill": "check-circle",
+  "xmark.circle.fill": "cancel",
+  "arrow.left": "arrow-back",
 } as IconMapping;
 
 /**
