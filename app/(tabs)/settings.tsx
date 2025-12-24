@@ -2,7 +2,7 @@
  * 設定画面
  */
 
-import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -12,21 +12,34 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
+import { useNotificationSettings } from "@/hooks/use-notification-settings";
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const { items, records, reload } = useStackStorage();
+  const {
+    settings: notificationSettings,
+    enableNotification,
+    disableNotification,
+  } = useNotificationSettings();
+
+  const handleToggleNotification = async (value: boolean) => {
+    if (value) {
+      const success = await enableNotification("20:00");
+      if (!success) {
+        Alert.alert(
+          "通知権限が必要です",
+          "通知を有効にするには、アプリの通知権限を許可してください。"
+        );
+      }
+    } else {
+      await disableNotification();
+    }
+  };
 
   const handleExportData = () => {
-    const data = {
-      items,
-      records,
-      exportedAt: new Date().toISOString(),
-    };
-    const jsonString = JSON.stringify(data, null, 2);
-    
     Alert.alert(
       "データエクスポート",
       `${items.length}個の項目と${records.length}件の記録があります。\n\n現在のバージョンではクリップボードへのコピーのみ対応しています。`,
@@ -114,6 +127,38 @@ export default function SettingsScreen() {
         {/* ヘッダー */}
         <View style={styles.header}>
           <ThemedText type="title">設定</ThemedText>
+        </View>
+
+        {/* 通知セクション */}
+        <View style={styles.section}>
+          <ThemedText
+            style={[styles.sectionTitle, { color: colors.textSecondary }]}
+          >
+            通知
+          </ThemedText>
+          <View style={styles.sectionContent}>
+            <View
+              style={[
+                styles.settingItem,
+                { backgroundColor: colors.card, justifyContent: "space-between" },
+              ]}
+            >
+              <View style={styles.settingContent}>
+                <ThemedText type="defaultSemiBold">
+                  毎日のリマインダー
+                </ThemedText>
+                <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+                  {notificationSettings.time}に通知します
+                </ThemedText>
+              </View>
+              <Switch
+                value={notificationSettings.enabled}
+                onValueChange={handleToggleNotification}
+                trackColor={{ false: colors.border, true: colors.tint + "80" }}
+                thumbColor={notificationSettings.enabled ? colors.tint : "#f4f3f4"}
+              />
+            </View>
+          </View>
         </View>
 
         {/* データセクション */}

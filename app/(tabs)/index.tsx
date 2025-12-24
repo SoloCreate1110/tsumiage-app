@@ -2,7 +2,8 @@
  * ホーム画面 - 積み上げ項目一覧
  */
 
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback } from "react";
 import { FlatList, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -18,7 +19,15 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
-  const { items, loading, getTodayValue } = useStackStorage();
+  const { items, loading, getTodayValue, reload } = useStackStorage();
+
+  // モーダルから戻った時にデータをリロード
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[HomeScreen] Screen focused, reloading data');
+      reload();
+    }, [reload])
+  );
 
   const handleAddItem = () => {
     router.push("/add-item");
@@ -47,7 +56,7 @@ export default function HomeScreen() {
     >
       {/* ヘッダー */}
       <View style={styles.header}>
-        <ThemedText type="title">積み上げ</ThemedText>
+        <ThemedText type="title">マイ記録</ThemedText>
         <ThemedText style={{ color: colors.textSecondary }}>
           {items.length}個の項目
         </ThemedText>

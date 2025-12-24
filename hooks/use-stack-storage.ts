@@ -69,6 +69,7 @@ export function useStackStorage() {
   // 新規項目を追加
   const addItem = useCallback(
     async (name: string, type: StackType, icon: string, color: string) => {
+      console.log('[addItem] Starting to add item:', { name, type, icon, color });
       const now = new Date().toISOString();
       const newItem: StackItem = {
         id: generateId(),
@@ -81,8 +82,11 @@ export function useStackStorage() {
         updatedAt: now,
       };
 
+      console.log('[addItem] New item created:', newItem);
       const newItems = [...items, newItem];
+      console.log('[addItem] Total items:', newItems.length);
       await saveItems(newItems);
+      console.log('[addItem] Item saved successfully');
       return newItem;
     },
     [items]

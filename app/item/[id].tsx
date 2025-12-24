@@ -28,6 +28,8 @@ import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
 import {
+  calculateGoalProgress,
+  calculatePeriodTotal,
   formatCount,
   formatDate,
   formatTime,
@@ -43,6 +45,7 @@ export default function ItemDetailScreen() {
 
   const {
     items,
+    records,
     addRecord,
     deleteItem,
     getRecordsByItem,
@@ -127,6 +130,12 @@ export default function ItemDetailScreen() {
     await addRecord(id, countValue);
   };
 
+  const handleSetGoal = () => {
+    if (id) {
+      router.push(`/set-goal/${id}`);
+    }
+  };
+
   const handleDelete = () => {
     Alert.alert(
       "項目を削除",
@@ -188,9 +197,14 @@ export default function ItemDetailScreen() {
         <ThemedText type="subtitle" numberOfLines={1} style={styles.headerTitle}>
           {item.name}
         </ThemedText>
-        <Pressable onPress={handleDelete} style={styles.deleteButton}>
-          <IconSymbol name="trash.fill" size={24} color={colors.error} />
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: Spacing.s }}>
+          <Pressable onPress={handleSetGoal} style={styles.iconButton}>
+            <IconSymbol name="gearshape.fill" size={20} color={colors.tint} />
+          </Pressable>
+          <Pressable onPress={handleDelete} style={styles.iconButton}>
+            <IconSymbol name="trash.fill" size={20} color={colors.error} />
+          </Pressable>
+        </View>
       </View>
 
       {/* メインコンテンツ */}
@@ -206,6 +220,90 @@ export default function ItemDetailScreen() {
           <ThemedText style={{ color: colors.textSecondary }}>
             今日: {item.type === "time" ? formatTime(todayValue) : formatCount(todayValue)}
           </ThemedText>
+
+          {/* 目標達成率 */}
+          {item.goal && (
+            <View style={styles.goalSection}>
+              {item.goal.daily && (
+                <View style={styles.goalItem}>
+                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                    日次目標
+                  </ThemedText>
+                  <View style={styles.progressBar}>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        {
+                          width: `${calculateGoalProgress(
+                            todayValue,
+                            item.goal.daily
+                          )}%`,
+                          backgroundColor: item.color,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                    {calculateGoalProgress(todayValue, item.goal.daily)}%
+                  </ThemedText>
+                </View>
+              )}
+              {item.goal.weekly && (
+                <View style={styles.goalItem}>
+                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                    週次目標
+                  </ThemedText>
+                  <View style={styles.progressBar}>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        {
+                          width: `${calculateGoalProgress(
+                            calculatePeriodTotal(records, item.id, 'weekly'),
+                            item.goal.weekly
+                          )}%`,
+                          backgroundColor: item.color,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                    {calculateGoalProgress(
+                      calculatePeriodTotal(records, item.id, 'weekly'),
+                      item.goal.weekly
+                    )}%
+                  </ThemedText>
+                </View>
+              )}
+              {item.goal.monthly && (
+                <View style={styles.goalItem}>
+                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                    月次目標
+                  </ThemedText>
+                  <View style={styles.progressBar}>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        {
+                          width: `${calculateGoalProgress(
+                            calculatePeriodTotal(records, item.id, 'monthly'),
+                            item.goal.monthly
+                          )}%`,
+                          backgroundColor: item.color,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                    {calculateGoalProgress(
+                      calculatePeriodTotal(records, item.id, 'monthly'),
+                      item.goal.monthly
+                    )}%
+                  </ThemedText>
+                </View>
+              )}
+            </View>
+          )}
         </View>
 
         {/* タイマー/カウンター */}
@@ -441,5 +539,26 @@ const styles = StyleSheet.create({
     padding: Spacing.m,
     borderRadius: BorderRadius.button,
     marginBottom: Spacing.xs,
+  },
+  iconButton: {
+    padding: Spacing.s,
+  },
+  goalSection: {
+    marginTop: Spacing.m,
+    gap: Spacing.s,
+    width: "100%",
+  },
+  goalItem: {
+    gap: Spacing.xs,
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: "rgba(0,0,0,0.1)",
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 4,
   },
 });

@@ -5,6 +5,16 @@
 // 積み上げ項目の種類
 export type StackType = 'time' | 'count';
 
+// 目標期間の種類
+export type GoalPeriod = 'daily' | 'weekly' | 'monthly';
+
+// 目標設定
+export interface Goal {
+  daily?: number;   // 日次目標
+  weekly?: number;  // 週次目標
+  monthly?: number; // 月次目標
+}
+
 // 積み上げ項目
 export interface StackItem {
   id: string;
@@ -13,6 +23,7 @@ export interface StackItem {
   icon: string;
   color: string;
   totalValue: number; // 秒（時間タイプ）または回数（カウントタイプ）
+  goal?: Goal;        // 目標設定（オプショナル）
   createdAt: string;
   updatedAt: string;
 }
@@ -96,4 +107,53 @@ export function getTodayString(): string {
 // UUID生成
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
+
+// 目標達成率を計算（0-100%）
+export function calculateGoalProgress(currentValue: number, goalValue: number | undefined): number {
+  if (!goalValue || goalValue === 0) return 0;
+  return Math.min(Math.round((currentValue / goalValue) * 100), 100);
+}
+
+// 週の開始日（月曜日）を取得
+export function getWeekStart(date: Date = new Date()): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // 月曜日を週の開始とする
+  return new Date(d.setDate(diff));
+}
+
+// 月の開始日を取得
+export function getMonthStart(date: Date = new Date()): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+// 指定期間の記録合計を計算
+export function calculatePeriodTotal(
+  records: StackRecord[],
+  itemId: string,
+  period: GoalPeriod
+): number {
+  const now = new Date();
+  let startDate: Date;
+
+  switch (period) {
+    case 'daily':
+      startDate = new Date(now.setHours(0, 0, 0, 0));
+      break;
+    case 'weekly':
+      startDate = getWeekStart(now);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'monthly':
+      startDate = getMonthStart(now);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+  }
+
+  const startDateStr = startDate.toISOString().split('T')[0];
+
+  return records
+    .filter((r) => r.itemId === itemId && r.date >= startDateStr)
+    .reduce((sum, r) => sum + r.value, 0);
 }

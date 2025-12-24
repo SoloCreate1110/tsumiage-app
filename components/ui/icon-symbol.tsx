@@ -34,6 +34,7 @@ const MAPPING = {
   "checkmark.circle.fill": "check-circle",
   "xmark.circle.fill": "cancel",
   "arrow.left": "arrow-back",
+  "calendar": "calendar-today",
 } as IconMapping;
 
 /**
