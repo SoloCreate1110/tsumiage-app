@@ -82,17 +82,16 @@ export default function ItemDetailScreen() {
 
   // タイマー処理
   useEffect(() => {
-    if (!isRunning) {
+    if (isRunning) {
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+      }, 1000);
+    } else {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
-      return;
     }
-
-    timerRef.current = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
-    }, 1000);
 
     return () => {
       if (timerRef.current) {
@@ -103,36 +102,41 @@ export default function ItemDetailScreen() {
 
   const handleStartTimer = () => {
     setIsRunning(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    scale.value = withSpring(1.05, {}, () => {
+      scale.value = withSpring(1);
+    });
   };
 
   const handleStopTimer = async () => {
     setIsRunning(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
     if (elapsedSeconds > 0 && id) {
       await addRecord(id, elapsedSeconds);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setElapsedSeconds(0);
     }
   };
 
   const handleResetTimer = () => {
+    setIsRunning(false);
     setElapsedSeconds(0);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleAddCount = async () => {
-    if (id) {
-      await addRecord(id, countValue);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      scale.value = withSpring(1.2, {}, () => {
-        scale.value = withSpring(1);
-      });
-    }
+    if (!id) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    scale.value = withSpring(1.1, {}, () => {
+      scale.value = withSpring(1);
+    });
+    await addRecord(id, countValue);
   };
 
   const handleSetGoal = () => {
-    router.push({
-      pathname: "/set-goal/[id]",
-      params: { id },
-    });
+    if (id) {
+      router.push(`/set-goal/${id}`);
+    }
   };
 
   const handleDelete = () => {
@@ -308,111 +312,52 @@ export default function ItemDetailScreen() {
         {/* タイマー/カウンター */}
         {item.type === "time" ? (
           <View style={styles.timerSection}>
-            {!showPomodoroMode ? (
-              <>
-                <Animated.View style={animatedStyle}>
-                  <View
-                    style={[
-                      styles.timerCircle,
-                      {
-                        borderColor: isRunning ? item.color : colors.border,
-                        backgroundColor: isRunning ? item.color + "10" : "transparent",
-                      },
-                    ]}
-                  >
-                    <ThemedText style={styles.timerText}>
-                      {formatTimeDetailed(elapsedSeconds)}
-                    </ThemedText>
-                  </View>
-                </Animated.View>
+            <Animated.View style={animatedStyle}>
+              <View
+                style={[
+                  styles.timerCircle,
+                  {
+                    borderColor: isRunning ? item.color : colors.border,
+                    backgroundColor: isRunning ? item.color + "10" : "transparent",
+                  },
+                ]}
+              >
+                <ThemedText style={styles.timerText}>
+                  {formatTimeDetailed(elapsedSeconds)}
+                </ThemedText>
+              </View>
+            </Animated.View>
 
-                <View style={styles.timerButtons}>
-                  {!isRunning ? (
-                    <Pressable
-                      style={[styles.mainButton, { backgroundColor: item.color }]}
-                      onPress={handleStartTimer}
-                    >
-                      <IconSymbol name="play.fill" size={32} color="#fff" />
-                      <ThemedText style={styles.buttonText}>開始</ThemedText>
-                    </Pressable>
-                  ) : (
-                    <Pressable
-                      style={[styles.mainButton, { backgroundColor: colors.error }]}
-                      onPress={handleStopTimer}
-                    >
-                      <IconSymbol name="stop.fill" size={32} color="#fff" />
-                      <ThemedText style={styles.buttonText}>停止</ThemedText>
-                    </Pressable>
-                  )}
+            <View style={styles.timerButtons}>
+              {!isRunning ? (
+                <Pressable
+                  style={[styles.mainButton, { backgroundColor: item.color }]}
+                  onPress={handleStartTimer}
+                >
+                  <IconSymbol name="play.fill" size={32} color="#fff" />
+                  <ThemedText style={styles.buttonText}>開始</ThemedText>
+                </Pressable>
+              ) : (
+                <Pressable
+                  style={[styles.mainButton, { backgroundColor: colors.error }]}
+                  onPress={handleStopTimer}
+                >
+                  <IconSymbol name="stop.fill" size={32} color="#fff" />
+                  <ThemedText style={styles.buttonText}>停止</ThemedText>
+                </Pressable>
+              )}
 
-                  {elapsedSeconds > 0 && !isRunning && (
-                    <Pressable
-                      style={[styles.secondaryButton, { borderColor: colors.border }]}
-                      onPress={handleResetTimer}
-                    >
-                      <ThemedText style={{ color: colors.textSecondary }}>
-                        リセット
-                      </ThemedText>
-                    </Pressable>
-                  )}
-
-                  <Pressable
-                    style={[styles.secondaryButton, { borderColor: colors.tint, borderWidth: 2 }]}
-                    onPress={() => setShowPomodoroMode(true)}
-                  >
-                    <ThemedText style={{ color: colors.tint, fontWeight: "600" }}>
-                      🍅 ポモドーロ
-                    </ThemedText>
-                  </Pressable>
-                </View>
-              </>
-            ) : (
-              <>
-                <View style={[styles.pomodoroDisplay, { backgroundColor: colors.card }]}>
-                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-                    {pomodoroTimer.state.phase === "work" ? "💪 作業中" : "🧘 休憩中"}
+              {elapsedSeconds > 0 && !isRunning && (
+                <Pressable
+                  style={[styles.secondaryButton, { borderColor: colors.border }]}
+                  onPress={handleResetTimer}
+                >
+                  <ThemedText style={{ color: colors.textSecondary }}>
+                    リセット
                   </ThemedText>
-                  <ThemedText style={{ fontSize: 48, fontWeight: "bold", marginVertical: 16 }}>
-                    {pomodoroTimer.formatTime(pomodoroTimer.state.timeLeft)}
-                  </ThemedText>
-                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-                    セッション: {pomodoroTimer.state.sessionsCompleted}
-                  </ThemedText>
-                </View>
-
-                <View style={styles.timerButtons}>
-                  {!pomodoroTimer.state.isRunning ? (
-                    <Pressable
-                      style={[styles.mainButton, { backgroundColor: item.color }]}
-                      onPress={pomodoroTimer.startPomodoro}
-                    >
-                      <IconSymbol name="play.fill" size={32} color="#fff" />
-                      <ThemedText style={styles.buttonText}>開始</ThemedText>
-                    </Pressable>
-                  ) : (
-                    <Pressable
-                      style={[styles.mainButton, { backgroundColor: colors.error }]}
-                      onPress={pomodoroTimer.pausePomodoro}
-                    >
-                      <IconSymbol name="pause.fill" size={32} color="#fff" />
-                      <ThemedText style={styles.buttonText}>一時停止</ThemedText>
-                    </Pressable>
-                  )}
-
-                  <Pressable
-                    style={[styles.secondaryButton, { borderColor: colors.border }]}
-                    onPress={() => {
-                      pomodoroTimer.stopPomodoro();
-                      setShowPomodoroMode(false);
-                    }}
-                  >
-                    <ThemedText style={{ color: colors.textSecondary }}>
-                      終了
-                    </ThemedText>
-                  </Pressable>
-                </View>
-              </>
-            )}
+                </Pressable>
+              )}
+            </View>
           </View>
         ) : (
           <View style={styles.counterSection}>
@@ -447,19 +392,25 @@ export default function ItemDetailScreen() {
             </View>
           </View>
         )}
+      </View>
 
-        {/* 記録一覧 */}
-        <View style={styles.recordsSection}>
-          <ThemedText type="subtitle" style={{ marginBottom: Spacing.m }}>
-            最近の記録
-          </ThemedText>
+      {/* 履歴 */}
+      <View style={styles.historySection}>
+        <ThemedText type="subtitle" style={styles.historyTitle}>
+          最近の記録
+        </ThemedText>
+        {itemRecords.length > 0 ? (
           <FlatList
             data={itemRecords}
+            keyExtractor={(record) => record.id}
             renderItem={renderRecord}
-            keyExtractor={(item) => item.id}
-            scrollEnabled={false}
+            showsVerticalScrollIndicator={false}
           />
-        </View>
+        ) : (
+          <ThemedText style={{ color: colors.textSecondary, textAlign: "center" }}>
+            まだ記録がありません
+          </ThemedText>
+        )}
       </View>
     </ThemedView>
   );
@@ -477,95 +428,76 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: Spacing.m,
-    paddingBottom: Spacing.m,
-    gap: Spacing.s,
+    paddingVertical: Spacing.s,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.1)",
   },
   backButton: {
     padding: Spacing.s,
   },
   headerTitle: {
     flex: 1,
+    textAlign: "center",
+    marginHorizontal: Spacing.s,
   },
-  iconButton: {
+  deleteButton: {
     padding: Spacing.s,
   },
   mainContent: {
-    flex: 1,
-    paddingHorizontal: Spacing.m,
+    padding: Spacing.m,
   },
   totalSection: {
-    marginBottom: Spacing.xl,
+    alignItems: "center",
+    marginBottom: Spacing.l,
   },
   totalValue: {
-    marginVertical: Spacing.s,
-  },
-  goalSection: {
-    marginTop: Spacing.m,
-    gap: Spacing.m,
-  },
-  goalItem: {
-    gap: Spacing.xs,
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: "#e0e0e0",
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: "100%",
-    borderRadius: 4,
+    fontSize: 36,
+    lineHeight: 44,
+    marginVertical: Spacing.xs,
   },
   timerSection: {
     alignItems: "center",
-    marginBottom: Spacing.xl,
   },
   timerCircle: {
     width: 200,
     height: 200,
     borderRadius: 100,
-    borderWidth: 3,
+    borderWidth: 4,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: Spacing.l,
   },
   timerText: {
-    fontSize: 48,
+    fontSize: 36,
     fontWeight: "bold",
+    fontVariant: ["tabular-nums"],
   },
   timerButtons: {
-    width: "100%",
+    flexDirection: "row",
     gap: Spacing.m,
+    alignItems: "center",
   },
   mainButton: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     paddingVertical: Spacing.m,
+    paddingHorizontal: Spacing.xl,
     borderRadius: BorderRadius.button,
     gap: Spacing.s,
   },
   buttonText: {
     color: "#fff",
+    fontSize: 18,
     fontWeight: "600",
-    fontSize: 16,
   },
   secondaryButton: {
-    paddingVertical: Spacing.m,
+    paddingVertical: Spacing.s,
+    paddingHorizontal: Spacing.m,
     borderRadius: BorderRadius.button,
     borderWidth: 1,
-    alignItems: "center",
-  },
-  pomodoroDisplay: {
-    width: "100%",
-    paddingVertical: Spacing.l,
-    borderRadius: BorderRadius.card,
-    alignItems: "center",
-    marginBottom: Spacing.l,
   },
   counterSection: {
     alignItems: "center",
-    marginBottom: Spacing.xl,
   },
   counterButton: {
     width: 160,
@@ -577,9 +509,9 @@ const styles = StyleSheet.create({
   },
   counterButtonText: {
     color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
-    marginTop: Spacing.s,
+    fontSize: 24,
+    fontWeight: "bold",
+    marginTop: Spacing.xs,
   },
   countAdjust: {
     flexDirection: "row",
@@ -588,23 +520,48 @@ const styles = StyleSheet.create({
   },
   adjustButton: {
     padding: Spacing.s,
-    borderWidth: 1,
     borderRadius: BorderRadius.button,
+    borderWidth: 1,
   },
   countValueText: {
-    fontSize: 20,
+    fontSize: 24,
     minWidth: 40,
     textAlign: "center",
   },
-  recordsSection: {
-    marginTop: Spacing.l,
+  historySection: {
+    flex: 1,
+    paddingHorizontal: Spacing.m,
+  },
+  historyTitle: {
+    marginBottom: Spacing.s,
   },
   recordItem: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: Spacing.m,
-    paddingHorizontal: Spacing.m,
-    borderRadius: BorderRadius.card,
-    marginBottom: Spacing.s,
+    alignItems: "center",
+    padding: Spacing.m,
+    borderRadius: BorderRadius.button,
+    marginBottom: Spacing.xs,
+  },
+  iconButton: {
+    padding: Spacing.s,
+  },
+  goalSection: {
+    marginTop: Spacing.m,
+    gap: Spacing.s,
+    width: "100%",
+  },
+  goalItem: {
+    gap: Spacing.xs,
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: "rgba(0,0,0,0.1)",
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 4,
   },
 });

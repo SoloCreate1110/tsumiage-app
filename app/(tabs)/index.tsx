@@ -3,7 +3,7 @@
  */
 
 import { router, useFocusEffect } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { FlatList, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -21,6 +21,12 @@ export default function HomeScreen() {
   const colors = Colors[colorScheme ?? "light"];
   const { items, loading, getTodayValue, reload } = useStackStorage();
 
+  // getTodayValueのメモ化版を作成（パフォーマンス最適化）
+  const memoizedGetTodayValue = useCallback(
+    (itemId: string) => getTodayValue(itemId),
+    [getTodayValue]
+  );
+
   // モーダルから戻った時にデータをリロード
   useFocusEffect(
     useCallback(() => {
@@ -29,13 +35,13 @@ export default function HomeScreen() {
     }, [reload])
   );
 
-  const handleAddItem = () => {
+  const handleAddItem = useCallback(() => {
     router.push("/add-item");
-  };
+  }, []);
 
-  const handleItemPress = (id: string) => {
+  const handleItemPress = useCallback((id: string) => {
     router.push(`/item/${id}`);
-  };
+  }, []);
 
   if (loading) {
     return (
@@ -70,10 +76,13 @@ export default function HomeScreen() {
           renderItem={({ item }) => (
             <StackItemCard
               item={item}
-              todayValue={getTodayValue(item.id)}
+              todayValue={memoizedGetTodayValue(item.id)}
               onPress={() => handleItemPress(item.id)}
             />
           )}
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          updateCellsBatchingPeriod={50}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />

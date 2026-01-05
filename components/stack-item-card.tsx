@@ -2,6 +2,7 @@
  * 積み上げ項目カードコンポーネント
  */
 
+import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
@@ -16,7 +17,7 @@ interface StackItemCardProps {
   onPress: () => void;
 }
 
-export function StackItemCard({ item, todayValue, onPress }: StackItemCardProps) {
+const StackItemCardComponent = ({ item, todayValue, onPress }: StackItemCardProps) => {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
 
@@ -70,7 +71,9 @@ export function StackItemCard({ item, todayValue, onPress }: StackItemCardProps)
       <IconSymbol name="chevron.right" size={20} color={colors.textDisabled} />
     </Pressable>
   );
-}
+};
+
+export const StackItemCard = React.memo(StackItemCardComponent);
 
 const styles = StyleSheet.create({
   card: {
