@@ -13,6 +13,9 @@ export interface Goal {
   daily?: number;   // 日次目標
   weekly?: number;  // 週次目標
   monthly?: number; // 月次目標
+  dailyDeadline?: string;   // 日次目標の期限（YYYY-MM-DD）
+  weeklyDeadline?: string;  // 週次目標の期限（YYYY-MM-DD）
+  monthlyDeadline?: string; // 月次目標の期限（YYYY-MM-DD）
 }
 
 // 積み上げ項目
@@ -74,7 +77,7 @@ export function formatTime(seconds: number): string {
   }
 }
 
-// 時間フォーマット（詳細表示用）
+// 時間フォーマット（詳細表示用 HH:MM:SS）
 export function formatTimeDetailed(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -89,13 +92,13 @@ export function formatCount(count: number): string {
   return `${count}回`;
 }
 
-// 日付フォーマット
+// 日付フォーマット（M/D形式）
 export function formatDate(dateString: string): string {
   // YYYY-MM-DD形式の文字列をパース（タイムゾーンの影響を避ける）
   const parts = dateString.split('-');
   const month = parseInt(parts[1], 10);
   const day = parseInt(parts[2], 10);
-  return `${month}/${day}`;
+  return `${month}月${day}日`;
 }
 
 // 今日の日付を取得（YYYY-MM-DD形式）
@@ -139,7 +142,7 @@ export function calculatePeriodTotal(
 
   switch (period) {
     case 'daily':
-      startDate = new Date(now.setHours(0, 0, 0, 0));
+      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       break;
     case 'weekly':
       startDate = getWeekStart(now);
@@ -156,4 +159,17 @@ export function calculatePeriodTotal(
   return records
     .filter((r) => r.itemId === itemId && r.date >= startDateStr)
     .reduce((sum, r) => sum + r.value, 0);
+}
+
+// 残日数を計算（目標設定日から今日までの残日数）
+export function calculateDaysRemaining(targetDate: string): number {
+  const target = new Date(targetDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+  
+  const diffTime = target.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  return Math.max(0, diffDays);
 }

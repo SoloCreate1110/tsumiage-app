@@ -10,7 +10,6 @@ import {
   Alert,
   FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   View,
 } from "react-native";
@@ -37,14 +36,7 @@ import {
   formatTime,
   formatTimeDetailed,
   StackRecord,
-  getTodayString,
 } from "@/types/stack";
-
-interface GroupedRecord {
-  date: string;
-  count: number;
-  totalValue: number;
-}
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -63,37 +55,10 @@ export default function ItemDetailScreen() {
   } = useStackStorage();
 
   const item = useMemo(() => items.find((i) => i.id === id), [items, id]);
-  
-  // 記録を日付ごとにグループ化（最新10日分）
-  const groupedRecords = useMemo(() => {
-    if (!id) return [];
-    const allRecords = getRecordsByItem(id);
-    const grouped: GroupedRecord[] = [];
-    const dateMap = new Map<string, { count: number; totalValue: number }>();
-
-    // すべての記録を日付ごとに集計
-    allRecords.forEach((record) => {
-      if (dateMap.has(record.date)) {
-        const existing = dateMap.get(record.date)!;
-        existing.count += 1;
-        existing.totalValue += record.value;
-      } else {
-        dateMap.set(record.date, { count: 1, totalValue: record.value });
-      }
-    });
-
-    // 日付でソート（新しい順）
-    const sortedDates = Array.from(dateMap.keys()).sort().reverse();
-    
-    // 最新の10日分に制限
-    sortedDates.slice(0, 10).forEach((date) => {
-      const data = dateMap.get(date)!;
-      grouped.push({ date, ...data });
-    });
-
-    return grouped;
-  }, [id, getRecordsByItem]);
-
+  const itemRecords = useMemo(
+    () => (id ? getRecordsByItem(id).slice(-10).reverse() : []),
+    [id, getRecordsByItem]
+  );
   const todayValue = useMemo(
     () => (id ? getTodayValue(id) : 0),
     [id, getTodayValue]
@@ -163,17 +128,6 @@ export default function ItemDetailScreen() {
     }
   };
 
-  // ポモドーロタイマー終了時に時間を加算
-  const handlePomodoroComplete = async () => {
-    if (pomodoroTimer.state.phase === "work" && pomodoroTimer.state.timeLeft === 0 && id) {
-      // 25分の作業が完了したら、25分を記録に追加
-      await addRecord(id, WORK_DURATION);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
-  };
-
-  const WORK_DURATION = 25 * 60; // 25分
-
   const handleSetGoal = () => {
     router.push({
       pathname: "/set-goal/[id]",
@@ -209,27 +163,20 @@ export default function ItemDetailScreen() {
     );
   }
 
-  const renderGroupedRecord = ({ item: record }: { item: GroupedRecord }) => {
-    const dateLabel = formatDate(record.date);
-    const valueLabel = item.type === "time" ? formatTime(record.totalValue) : formatCount(record.totalValue);
-    const countLabel = record.count === 1 ? "1回" : `${record.count}回`;
-    
-    return (
-      <View style={[styles.recordItem, { backgroundColor: colors.card }]}>
-        <View style={styles.recordDateSection}>
-          <ThemedText style={{ color: colors.textSecondary, fontSize: 14 }}>
-            {dateLabel}
-          </ThemedText>
-          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-            {countLabel}
-          </ThemedText>
-        </View>
-        <ThemedText type="defaultSemiBold" style={{ fontSize: 16 }}>
-          {valueLabel}
-        </ThemedText>
-      </View>
-    );
-  };
+  const renderRecord = ({ item: record }: { item: StackRecord }) => (
+    <View
+      style={[styles.recordItem, { backgroundColor: colors.card }]}
+    >
+      <ThemedText style={{ color: colors.textSecondary }}>
+        {formatDate(record.date)}
+      </ThemedText>
+      <ThemedText type="defaultSemiBold">
+        {item.type === "time"
+          ? formatTime(record.value)
+          : formatCount(record.value)}
+      </ThemedText>
+    </View>
+  );
 
   return (
     <ThemedView
@@ -260,7 +207,7 @@ export default function ItemDetailScreen() {
       </View>
 
       {/* メインコンテンツ */}
-      <ScrollView style={styles.mainContent} showsVerticalScrollIndicator={false}>
+      <View style={styles.mainContent}>
         {/* 累計表示 */}
         <View style={styles.totalSection}>
           <ThemedText style={{ color: colors.textSecondary }}>累計</ThemedText>
@@ -385,7 +332,7 @@ export default function ItemDetailScreen() {
                       style={[styles.mainButton, { backgroundColor: item.color }]}
                       onPress={handleStartTimer}
                     >
-                      <IconSymbol name="play.fill" size={28} color="#fff" />
+                      <IconSymbol name="play.fill" size={32} color="#fff" />
                       <ThemedText style={styles.buttonText}>開始</ThemedText>
                     </Pressable>
                   ) : (
@@ -393,7 +340,7 @@ export default function ItemDetailScreen() {
                       style={[styles.mainButton, { backgroundColor: colors.error }]}
                       onPress={handleStopTimer}
                     >
-                      <IconSymbol name="stop.fill" size={28} color="#fff" />
+                      <IconSymbol name="stop.fill" size={32} color="#fff" />
                       <ThemedText style={styles.buttonText}>停止</ThemedText>
                     </Pressable>
                   )}
@@ -439,7 +386,7 @@ export default function ItemDetailScreen() {
                       style={[styles.mainButton, { backgroundColor: item.color }]}
                       onPress={pomodoroTimer.startPomodoro}
                     >
-                      <IconSymbol name="play.fill" size={28} color="#fff" />
+                      <IconSymbol name="play.fill" size={32} color="#fff" />
                       <ThemedText style={styles.buttonText}>開始</ThemedText>
                     </Pressable>
                   ) : (
@@ -447,7 +394,7 @@ export default function ItemDetailScreen() {
                       style={[styles.mainButton, { backgroundColor: colors.error }]}
                       onPress={pomodoroTimer.pausePomodoro}
                     >
-                      <IconSymbol name="pause.fill" size={28} color="#fff" />
+                      <IconSymbol name="pause.fill" size={32} color="#fff" />
                       <ThemedText style={styles.buttonText}>一時停止</ThemedText>
                     </Pressable>
                   )}
@@ -455,7 +402,6 @@ export default function ItemDetailScreen() {
                   <Pressable
                     style={[styles.secondaryButton, { borderColor: colors.border }]}
                     onPress={() => {
-                      handlePomodoroComplete();
                       pomodoroTimer.stopPomodoro();
                       setShowPomodoroMode(false);
                     }}
@@ -507,20 +453,14 @@ export default function ItemDetailScreen() {
           <ThemedText type="subtitle" style={{ marginBottom: Spacing.m }}>
             最近の記録
           </ThemedText>
-          {groupedRecords.length > 0 ? (
-            <FlatList
-              data={groupedRecords}
-              renderItem={renderGroupedRecord}
-              keyExtractor={(item) => item.date}
-              scrollEnabled={false}
-            />
-          ) : (
-            <ThemedText style={{ color: colors.textSecondary, textAlign: "center", paddingVertical: Spacing.m }}>
-              記録がありません
-            </ThemedText>
-          )}
+          <FlatList
+            data={itemRecords}
+            renderItem={renderRecord}
+            keyExtractor={(item) => item.id}
+            scrollEnabled={false}
+          />
         </View>
-      </ScrollView>
+      </View>
     </ThemedView>
   );
 }
@@ -581,16 +521,16 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
   },
   timerCircle: {
-    width: 180,
-    height: 180,
-    borderRadius: 90,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
     borderWidth: 3,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: Spacing.l,
   },
   timerText: {
-    fontSize: 40,
+    fontSize: 48,
     fontWeight: "bold",
   },
   timerButtons: {
@@ -658,18 +598,13 @@ const styles = StyleSheet.create({
   },
   recordsSection: {
     marginTop: Spacing.l,
-    marginBottom: Spacing.l,
   },
   recordItem: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
     paddingVertical: Spacing.m,
     paddingHorizontal: Spacing.m,
     borderRadius: BorderRadius.card,
     marginBottom: Spacing.s,
-  },
-  recordDateSection: {
-    flex: 1,
   },
 });
