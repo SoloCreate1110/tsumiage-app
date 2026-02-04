@@ -16,6 +16,11 @@ export interface Goal {
   startDate?: string; // YYYY-MM-DD
 }
 
+export interface ReminderSetting {
+  enabled: boolean;
+  time: string; // HH:MM
+}
+
 // Stack item
 export interface StackItem {
   id: string;
@@ -25,6 +30,7 @@ export interface StackItem {
   color: string;
   totalValue: number;
   goal?: Goal;
+  reminder?: ReminderSetting;
   createdAt: string;
   updatedAt: string;
   order?: number; // 並び順
@@ -37,6 +43,14 @@ export interface StackRecord {
   value: number;
   date: string; // YYYY-MM-DD
   createdAt: string;
+  note?: string;
+}
+
+export interface DailyNote {
+  itemId: string;
+  date: string; // YYYY-MM-DD
+  text: string;
+  updatedAt: string;
 }
 
 // Icon options

@@ -16,8 +16,8 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
-import { getRandomQuote } from "@/constants/quotes";
 import { getTodayString, StackItem } from "@/types/stack";
+import { useQuoteHistory } from "@/hooks/use-quote-history";
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
@@ -25,7 +25,8 @@ export default function HomeScreen() {
   const colors = Colors[colorScheme ?? "light"];
   const { items, loading, getTodayValue, calculateStreak, reorderItems, reload } = useStackStorage();
 
-  const [quote, setQuote] = useState(getRandomQuote());
+  const { ensureTodayQuote, getTodayQuote } = useQuoteHistory();
+  const [quote, setQuote] = useState(getTodayQuote());
 
   // getTodayValue縺ｮ繝｡繝｢蛹也沿繧剃ｽ懈・・医ヱ繝輔か繝ｼ繝槭Φ繧ｹ譛驕ｩ蛹厄ｼ・
   const memoizedGetTodayValue = useCallback(
@@ -38,10 +39,15 @@ export default function HomeScreen() {
     useCallback(() => {
       console.log('[HomeScreen] Screen focused, reloading data');
       reload();
-      // 逕ｻ髱｢繧定｡ｨ遉ｺ縺吶ｋ縺溘・縺ｫ蜷崎ｨ繧貞､峨∴繧九・縺梧･ｽ縺励＞
-      setQuote(getRandomQuote());
-    }, [reload])
+      ensureTodayQuote();
+      setQuote(getTodayQuote());
+    }, [reload, ensureTodayQuote, getTodayQuote])
   );
+
+  useEffect(() => {
+    ensureTodayQuote();
+    setQuote(getTodayQuote());
+  }, [ensureTodayQuote, getTodayQuote]);
 
   const handleAddItem = useCallback(() => {
     router.push("/add-item");
@@ -52,6 +58,7 @@ export default function HomeScreen() {
   }, []);
 
   const streak = calculateStreak();
+
 
   if (loading) {
     return (
@@ -126,15 +133,26 @@ export default function HomeScreen() {
       </View>
 
       {/* 名言 */}
-      <View style={[styles.quoteContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <IconSymbol name="quote.bubble" size={20} color={colors.textSecondary} style={{ marginBottom: 4 }} />
-        <ThemedText style={[styles.quoteText, { color: colors.text }]}>
-          {quote.text}
-        </ThemedText>
-        <ThemedText style={[styles.quoteAuthor, { color: colors.textSecondary }]}>
-          ・{quote.author}
-        </ThemedText>
-      </View>
+      <Pressable onPress={() => router.push("/quotes")}>
+        <View style={[styles.quoteContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.quoteHeader}>
+            <IconSymbol name="quote.bubble" size={20} color={colors.textSecondary} />
+            <ThemedText style={styles.quoteNo}>
+              NO.{quote.no.toString().padStart(3, "0")}
+            </ThemedText>
+            <View style={{ flex: 1 }} />
+            <ThemedText style={styles.quoteHint}>タップで収集済み名言リストへ</ThemedText>
+            <IconSymbol name="chevron.right" size={16} color={colors.textDisabled} />
+          </View>
+          <ThemedText style={[styles.quoteText, { color: colors.text }]}>
+            {quote.text}
+          </ThemedText>
+          <ThemedText style={[styles.quoteAuthor, { color: colors.textSecondary }]}>
+            ・{quote.author}
+          </ThemedText>
+        </View>
+      </Pressable>
+
 
       {/* 鬆・岼荳隕ｧ */}
       {items.length > 0 ? (
@@ -225,6 +243,21 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.card,
     borderWidth: 1,
     borderLeftWidth: 4,
+  },
+  quoteHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.s,
+    marginBottom: 4,
+  },
+  quoteNo: {
+    fontSize: 12,
+    color: "#888",
+    fontWeight: "600",
+  },
+  quoteHint: {
+    fontSize: 10,
+    color: "#999",
   },
   quoteText: {
     fontSize: 14,

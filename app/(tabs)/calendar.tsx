@@ -215,6 +215,9 @@ export default function CalendarScreen() {
             ))}
             <ThemedText style={{ fontSize: 12, color: colors.textSecondary, marginLeft: 8 }}>多</ThemedText>
           </View>
+          <ThemedText style={styles.cutoffNote}>
+            ※ 日付は朝6時に切り替わります
+          </ThemedText>
 
           <View style={styles.statsContainer}>
             <ThemedText type="subtitle" style={{ marginBottom: Spacing.m }}>週間サマリー</ThemedText>
@@ -287,6 +290,13 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingHorizontal: Spacing.m,
     marginBottom: Spacing.l,
+  },
+  cutoffNote: {
+    fontSize: 11,
+    color: "#888",
+    paddingHorizontal: Spacing.m,
+    marginBottom: Spacing.l,
+    textAlign: "right",
   },
   legendCell: {
     width: 12,

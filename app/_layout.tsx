@@ -81,10 +81,11 @@ export default function RootLayout() {
               <Stack>
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                 <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
-                <Stack.Screen name="add-item" options={{ presentation: "modal", headerShown: false }} />
-                <Stack.Screen name="item/[id]" options={{ headerShown: false }} />
-                <Stack.Screen name="set-goal/[id]" options={{ presentation: "modal", headerShown: false }} />
-                <Stack.Screen name="oauth/callback" options={{ headerShown: false }} />
+              <Stack.Screen name="add-item" options={{ presentation: "modal", headerShown: false }} />
+              <Stack.Screen name="item/[id]" options={{ headerShown: false }} />
+              <Stack.Screen name="set-goal/[id]" options={{ presentation: "modal", headerShown: false }} />
+              <Stack.Screen name="quotes" options={{ headerShown: false }} />
+              <Stack.Screen name="oauth/callback" options={{ headerShown: false }} />
               </Stack>
             </StackStorageProvider>
             <StatusBar style="auto" />

@@ -12,8 +12,14 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
+  TextInput,
   View,
 } from "react-native";
+import { Platform } from "react-native";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -36,6 +42,7 @@ import {
   formatDate,
   formatTime,
   formatTimeDetailed,
+  getTodayString,
   StackRecord,
 } from "@/types/stack";
 import { getLevelInfo } from "@/constants/levels";
@@ -57,14 +64,19 @@ export default function ItemDetailScreen() {
     items,
     records,
     addRecord,
+    updateItem,
     deleteItem,
     getRecordsByItem,
     getTodayValue,
+    getDailyNote,
+    setDailyNote,
     loading,
     reload,
   } = useStackStorage();
 
   const item = useMemo(() => items.find((i) => i.id === id), [items, id]);
+  const isExpoGo =
+    Constants.appOwnership === "expo" || Constants.executionEnvironment === "storeClient";
 
   useFocusEffect(
     useCallback(() => {
@@ -107,6 +119,28 @@ export default function ItemDetailScreen() {
     [id, getTodayValue]
   );
 
+  const recentNotes = useMemo(() => {
+    if (!id) return [];
+    return records
+      .filter((r) => r.itemId === id && r.note && r.note.trim().length > 0)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 3);
+  }, [records, id]);
+
+  const todayDate = getTodayString();
+  const [sessionNote, setSessionNote] = useState("");
+  const [dailyNoteText, setDailyNoteText] = useState("");
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderTime, setReminderTime] = useState("20:00");
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
+  useEffect(() => {
+    if (!item || !id) return;
+    setReminderEnabled(item.reminder?.enabled ?? false);
+    setReminderTime(item.reminder?.time ?? "20:00");
+    setDailyNoteText(getDailyNote(id, todayDate));
+  }, [item, id, getDailyNote, todayDate]);
+
   const levelInfo = useMemo(() => {
     if (!item) return null;
     return getLevelInfo(item.type, item.totalValue);
@@ -117,8 +151,94 @@ export default function ItemDetailScreen() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showPomodoroMode, setShowPomodoroMode] = useState(false);
+  const [autoSwitchBreak, setAutoSwitchBreak] = useState(true);
 
   const { playSuccess } = useSound(); // Moved here
+
+  const cancelItemReminder = useCallback(
+    async (itemId: string) => {
+      if (isExpoGo) return;
+      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+      await Promise.all(
+        scheduled
+          .filter((n) => n.content.data && (n.content.data as any).itemId === itemId)
+          .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier))
+      );
+    },
+    [isExpoGo]
+  );
+
+  const scheduleItemReminder = useCallback(
+    async (itemId: string, name: string, time: string) => {
+      if (isExpoGo) return false;
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== "granted") return false;
+
+      await cancelItemReminder(itemId);
+      const [hour, minute] = time.split(":").map(Number);
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `${name}の時間です`,
+          body: "今日の積み上げを少し進めましょう。",
+          data: { itemId },
+          sound: true,
+        },
+        trigger: { hour, minute, repeats: true },
+      });
+      return true;
+    },
+    [cancelItemReminder, isExpoGo]
+  );
+
+  const handleToggleReminder = useCallback(
+    async (value: boolean) => {
+      if (!item || !id) return;
+      if (value) {
+        const ok = await scheduleItemReminder(item.id, item.name, reminderTime);
+        if (!ok) {
+          Alert.alert(
+            "通知が許可されていません",
+            "通知を受け取るには、端末の設定で通知を許可してください。"
+          );
+          return;
+        }
+      } else {
+        await cancelItemReminder(item.id);
+      }
+
+      setReminderEnabled(value);
+      await updateItem(item.id, {
+        reminder: { enabled: value, time: reminderTime },
+      });
+    },
+    [item, id, reminderTime, scheduleItemReminder, cancelItemReminder, updateItem]
+  );
+
+  const handleTimeChange = useCallback(
+    async (event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (event.type === "dismissed") {
+        setShowTimePicker(false);
+        return;
+      }
+      if (Platform.OS === "android") {
+        setShowTimePicker(false);
+      }
+      if (!selectedDate || !item) return;
+
+      const hours = `${selectedDate.getHours()}`.padStart(2, "0");
+      const minutes = `${selectedDate.getMinutes()}`.padStart(2, "0");
+      const nextTime = `${hours}:${minutes}`;
+      setReminderTime(nextTime);
+      await updateItem(item.id, {
+        reminder: { enabled: reminderEnabled, time: nextTime },
+      });
+      if (reminderEnabled) {
+        await scheduleItemReminder(item.id, item.name, nextTime);
+      }
+    },
+    [item, reminderEnabled, scheduleItemReminder, updateItem]
+  );
 
   // 繝昴Δ繝峨・繝ｭ繧ｿ繧､繝槭・終了凾縺ｫ譎る俣繧貞刈邂・
   const WORK_DURATION = 25 * 60; // 25蛻・
@@ -126,22 +246,27 @@ export default function ItemDetailScreen() {
   const handlePomodoroComplete = useCallback(async () => {
     if (id) {
       // 25蛻・・菴懈･ｭ縺悟ｮ御ｺ・＠縺溘ｉ縲・5蛻・ｒ險倬鹸縺ｫ霑ｽ蜉
-      await addRecord(id, WORK_DURATION);
+      const note = sessionNote.trim() ? sessionNote.trim() : undefined;
+      await addRecord(id, WORK_DURATION, note);
+      if (note) setSessionNote("");
       await playSuccess();
     }
-  }, [id, addRecord, playSuccess]);
+  }, [id, addRecord, playSuccess, sessionNote]);
 
   const handlePomodoroStop = useCallback(async (elapsedSeconds: number) => {
     if (id && elapsedSeconds > 0) {
       // 騾比ｸｭ終了〒繧よ凾髢薙ｒ蜉邂・
-      await addRecord(id, elapsedSeconds);
+      const note = sessionNote.trim() ? sessionNote.trim() : undefined;
+      await addRecord(id, elapsedSeconds, note);
+      if (note) setSessionNote("");
       await playSuccess();
     }
-  }, [id, addRecord, playSuccess]);
+  }, [id, addRecord, playSuccess, sessionNote]);
 
   const pomodoroTimer = usePomodoroTimer({
     onWorkComplete: handlePomodoroComplete,
-    onStop: handlePomodoroStop
+    onStop: handlePomodoroStop,
+    autoSwitchBreak
   });
 
   // 繧ｫ繧ｦ繝ｳ繧ｿ繝ｼ迥ｶ諷・
@@ -181,7 +306,9 @@ export default function ItemDetailScreen() {
   const handleStopTimer = async () => {
     setIsRunning(false);
     if (elapsedSeconds > 0 && id) {
-      await addRecord(id, elapsedSeconds);
+      const note = sessionNote.trim() ? sessionNote.trim() : undefined;
+      await addRecord(id, elapsedSeconds, note);
+      if (note) setSessionNote("");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setElapsedSeconds(0);
     }
@@ -385,6 +512,18 @@ export default function ItemDetailScreen() {
                   </ThemedText>
                 </View>
 
+                <View style={[styles.pomodoroOptions, { backgroundColor: colors.card }]}>
+                  <ThemedText style={{ color: colors.textSecondary }}>
+                    休憩自動切替
+                  </ThemedText>
+                  <Switch
+                    value={autoSwitchBreak}
+                    onValueChange={setAutoSwitchBreak}
+                    trackColor={{ false: colors.border, true: colors.tint + "80" }}
+                    thumbColor={autoSwitchBreak ? colors.tint : "#f4f3f4"}
+                  />
+                </View>
+
                 <View style={styles.timerButtons}>
                   {!pomodoroTimer.state.isRunning ? (
                     <Pressable
@@ -450,6 +589,26 @@ export default function ItemDetailScreen() {
                 <IconSymbol name="plus.circle.fill" size={24} color={colors.text} />
               </Pressable>
             </View>
+          </View>
+        )}
+
+        {/* 作業ログメモ */}
+        {item.type === "time" && (
+          <View style={styles.memoSection}>
+            <ThemedText type="subtitle" style={{ marginBottom: Spacing.s }}>
+              作業ログメモ
+            </ThemedText>
+            <TextInput
+              style={[styles.memoInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+              placeholder="今回の作業内容をメモ（記録時に保存）"
+              placeholderTextColor={colors.textDisabled}
+              value={sessionNote}
+              onChangeText={setSessionNote}
+              multiline
+            />
+            <ThemedText style={styles.memoHint}>
+              ※ タイマーを「停止」またはポモドーロ完了時に記録へ保存されます
+            </ThemedText>
           </View>
         )}
 
@@ -559,6 +718,123 @@ export default function ItemDetailScreen() {
           )}
         </View>
 
+        {/* リマインダー */}
+        <View style={styles.reminderSection}>
+          <ThemedText type="subtitle" style={{ marginBottom: Spacing.s }}>
+            リマインダー
+          </ThemedText>
+          <View style={[styles.reminderRow, { backgroundColor: colors.card }]}>
+            <View style={{ flex: 1 }}>
+              <ThemedText type="defaultSemiBold">このタスクを通知</ThemedText>
+              <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+                {isExpoGo ? "Expo Goでは通知が使えません" : `${reminderTime}に通知`}
+              </ThemedText>
+            </View>
+            <Switch
+              value={reminderEnabled}
+              onValueChange={handleToggleReminder}
+              disabled={isExpoGo}
+              trackColor={{ false: colors.border, true: colors.tint + "80" }}
+              thumbColor={reminderEnabled ? colors.tint : "#f4f3f4"}
+            />
+          </View>
+
+          <View style={{ marginTop: Spacing.s }}>
+            {Platform.OS === "web" ? (
+              <View
+                style={[
+                  styles.reminderTimeInput,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <TextInput
+                  style={{ flex: 1, color: colors.text, fontSize: 16 }}
+                  value={reminderTime}
+                  onChangeText={(value) => {
+                    setReminderTime(value);
+                    if (item) {
+                      updateItem(item.id, {
+                        reminder: { enabled: reminderEnabled, time: value },
+                      });
+                    }
+                  }}
+                  // @ts-ignore
+                  type="time"
+                />
+                <IconSymbol name="clock.fill" size={18} color={colors.textSecondary} />
+              </View>
+            ) : (
+              <>
+                <Pressable
+                  onPress={() => setShowTimePicker(true)}
+                  style={[
+                    styles.reminderTimeInput,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                  ]}
+                >
+                  <ThemedText style={{ color: colors.text }}>
+                    {reminderTime}
+                  </ThemedText>
+                  <IconSymbol name="clock.fill" size={18} color={colors.textSecondary} />
+                </Pressable>
+                {showTimePicker && (
+                  <DateTimePicker
+                    value={new Date(`1970-01-01T${reminderTime}:00`)}
+                    mode="time"
+                    display="default"
+                    onChange={handleTimeChange}
+                  />
+                )}
+              </>
+            )}
+          </View>
+        </View>
+
+        {/* 今日のメモ */}
+        <View style={styles.memoSection}>
+          <ThemedText type="subtitle" style={{ marginBottom: Spacing.s }}>
+            今日の気づき・反省
+          </ThemedText>
+          <TextInput
+            style={[styles.memoInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+            placeholder="今日の気づきや反省をメモ"
+            placeholderTextColor={colors.textDisabled}
+            value={dailyNoteText}
+            onChangeText={setDailyNoteText}
+            multiline
+          />
+          <Pressable
+            style={[styles.secondaryButton, { borderColor: colors.border }]}
+            onPress={() => {
+              if (!id) return;
+              setDailyNote(id, todayDate, dailyNoteText);
+            }}
+          >
+            <ThemedText style={{ color: colors.textSecondary }}>保存</ThemedText>
+          </Pressable>
+        </View>
+
+        {/* 作業ログ */}
+        <View style={styles.notesSection}>
+          <ThemedText type="subtitle" style={{ marginBottom: Spacing.s }}>
+            作業ログ
+          </ThemedText>
+          {recentNotes.length > 0 ? (
+            recentNotes.map((note) => (
+              <View key={note.id} style={[styles.noteCard, { backgroundColor: colors.card }]}>
+                <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+                  {formatDate(note.date)}
+                </ThemedText>
+                <ThemedText style={{ marginTop: 4 }}>{note.note}</ThemedText>
+              </View>
+            ))
+          ) : (
+            <ThemedText style={{ color: colors.textSecondary }}>
+              まだメモがありません
+            </ThemedText>
+          )}
+        </View>
+
         {/* 險倬鹸荳隕ｧ */}
         <View style={styles.recordsSection}>
           <ThemedText type="subtitle" style={{ marginBottom: Spacing.m }}>
@@ -612,6 +888,48 @@ const styles = StyleSheet.create({
   },
   totalSection: {
     marginBottom: Spacing.xl,
+  },
+  memoSection: {
+    marginBottom: Spacing.l,
+  },
+  memoInput: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.card,
+    padding: Spacing.m,
+    minHeight: 90,
+    fontSize: 14,
+  },
+  memoHint: {
+    marginTop: Spacing.xs,
+    color: "#888",
+    fontSize: 11,
+  },
+  reminderSection: {
+    marginBottom: Spacing.l,
+  },
+  reminderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: Spacing.m,
+    borderRadius: BorderRadius.card,
+  },
+  reminderTimeInput: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderRadius: BorderRadius.card,
+    paddingHorizontal: Spacing.m,
+    paddingVertical: Spacing.s,
+  },
+  notesSection: {
+    marginBottom: Spacing.l,
+  },
+  noteCard: {
+    padding: Spacing.m,
+    borderRadius: BorderRadius.card,
+    marginBottom: Spacing.s,
   },
   totalValue: {
     marginVertical: Spacing.s,
@@ -684,6 +1002,15 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.card,
     alignItems: "center",
     marginBottom: Spacing.l,
+  },
+  pomodoroOptions: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: Spacing.m,
+    borderRadius: BorderRadius.card,
+    marginBottom: Spacing.m,
   },
   pomodoroTime: {
     fontSize: 48,

@@ -22,6 +22,7 @@ const BREAK_DURATION = 5 * 60; // 5分
 interface PomodoroOptions {
   onWorkComplete?: () => void;
   onStop?: (elapsedSeconds: number) => void;
+  autoSwitchBreak?: boolean;
 }
 
 export function usePomodoroTimer(options?: PomodoroOptions) {
@@ -38,11 +39,13 @@ export function usePomodoroTimer(options?: PomodoroOptions) {
   // コールバックをRefに保存
   const onWorkCompleteRef = useRef(options?.onWorkComplete);
   const onStopRef = useRef(options?.onStop);
+  const autoSwitchBreakRef = useRef(options?.autoSwitchBreak ?? true);
 
   useEffect(() => {
     onWorkCompleteRef.current = options?.onWorkComplete;
     onStopRef.current = options?.onStop;
-  }, [options?.onWorkComplete, options?.onStop]);
+    autoSwitchBreakRef.current = options?.autoSwitchBreak ?? true;
+  }, [options?.onWorkComplete, options?.onStop, options?.autoSwitchBreak]);
 
   // タイマーの更新
   useEffect(() => {
@@ -70,11 +73,13 @@ export function usePomodoroTimer(options?: PomodoroOptions) {
               onWorkCompleteRef.current();
             }
 
+            const autoSwitchBreak = autoSwitchBreakRef.current ?? true;
             return {
               ...prev,
               phase: "break",
               timeLeft: BREAK_DURATION,
               totalTime: BREAK_DURATION,
+              isRunning: autoSwitchBreak ? prev.isRunning : false,
             };
           } else if (prev.phase === "break") {
             // 休憩終了 → 次の作業セッション開始

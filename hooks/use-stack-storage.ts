@@ -12,16 +12,23 @@ import {
   StackItem,
   StackRecord,
   StackType,
+  DailyNote,
 } from "@/types/stack";
 
 const ITEMS_KEY = "stack_items";
 const RECORDS_KEY = "stack_records";
+const DAILY_NOTES_KEY = "stack_daily_notes";
 
 const normalizeRecordDate = (value: string, createdAt?: string): string => {
   if (createdAt) {
     const created = new Date(createdAt);
     if (!Number.isNaN(created.getTime())) {
-      return toDateString(created);
+      const adjusted = new Date(created);
+      if (adjusted.getHours() < 6) {
+        adjusted.setDate(adjusted.getDate() - 1);
+      }
+      adjusted.setHours(0, 0, 0, 0);
+      return toDateString(adjusted);
     }
   }
 
@@ -44,6 +51,7 @@ const normalizeRecordDate = (value: string, createdAt?: string): string => {
 function useStackStorageInternal() {
   const [items, setItems] = useState<StackItem[]>([]);
   const [records, setRecords] = useState<StackRecord[]>([]);
+  const [dailyNotes, setDailyNotes] = useState<DailyNote[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 蛻晄悄繝・・繧ｿ隱ｭ縺ｿ霎ｼ縺ｿ
@@ -53,9 +61,10 @@ function useStackStorageInternal() {
 
   const loadData = useCallback(async () => {
     try {
-      const [itemsData, recordsData] = await Promise.all([
+      const [itemsData, recordsData, dailyNotesData] = await Promise.all([
         AsyncStorage.getItem(ITEMS_KEY),
         AsyncStorage.getItem(RECORDS_KEY),
+        AsyncStorage.getItem(DAILY_NOTES_KEY),
       ]);
 
       if (itemsData) {
@@ -63,6 +72,7 @@ function useStackStorageInternal() {
         const withOrder = parsedItems.map((item, index) => ({
           ...item,
           order: item.order ?? index,
+          reminder: item.reminder ?? { enabled: false, time: "20:00" },
         }));
         const sortedItems = [...withOrder].sort((a, b) => {
           const ao = a.order ?? 0;
@@ -79,6 +89,10 @@ function useStackStorageInternal() {
           date: normalizeRecordDate(r.date, r.createdAt),
         }));
         setRecords(normalized);
+      }
+      if (dailyNotesData) {
+        const parsedNotes = JSON.parse(dailyNotesData) as DailyNote[];
+        setDailyNotes(parsedNotes);
       }
     } catch (error) {
       console.error("Failed to load data:", error);
@@ -111,6 +125,15 @@ function useStackStorageInternal() {
     }
   };
 
+  const saveDailyNotes = async (newNotes: DailyNote[]) => {
+    try {
+      await AsyncStorage.setItem(DAILY_NOTES_KEY, JSON.stringify(newNotes));
+      setDailyNotes(newNotes);
+    } catch (error) {
+      console.error("Failed to save daily notes:", error);
+    }
+  };
+
   // 譁ｰ隕城・岼繧定ｿｽ蜉
   const addItem = useCallback(
     async (name: string, type: StackType, icon: string, color: string) => {
@@ -124,6 +147,7 @@ function useStackStorageInternal() {
         color,
         totalValue: 0,
         order: items.length,
+        reminder: { enabled: false, time: "20:00" },
         createdAt: now,
         updatedAt: now,
       };
@@ -175,7 +199,7 @@ function useStackStorageInternal() {
 
   // 遨阪∩荳翫￡險倬鹸繧定ｿｽ蜉
   const addRecord = useCallback(
-    async (itemId: string, value: number) => {
+    async (itemId: string, value: number, note?: string) => {
       const now = new Date().toISOString();
       const today = getTodayString();
 
@@ -185,6 +209,7 @@ function useStackStorageInternal() {
         value,
         date: today,
         createdAt: now,
+        note: note?.trim() ? note.trim() : undefined,
       };
 
       // 險倬鹸繧定ｿｽ蜉
@@ -287,9 +312,33 @@ function useStackStorageInternal() {
     return streak;
   }, [records]);
 
+  const getDailyNote = useCallback(
+    (itemId: string, date: string) => {
+      return dailyNotes.find((n) => n.itemId === itemId && n.date === date)?.text ?? "";
+    },
+    [dailyNotes]
+  );
+
+  const setDailyNote = useCallback(
+    async (itemId: string, date: string, text: string) => {
+      const trimmed = text.trim();
+      const now = new Date().toISOString();
+      let nextNotes = dailyNotes.filter((n) => !(n.itemId === itemId && n.date === date));
+      if (trimmed) {
+        nextNotes = [
+          ...nextNotes,
+          { itemId, date, text: trimmed, updatedAt: now },
+        ];
+      }
+      await saveDailyNotes(nextNotes);
+    },
+    [dailyNotes]
+  );
+
   return {
     items,
     records,
+    dailyNotes,
     loading,
     addItem,
     updateItem,
@@ -301,6 +350,8 @@ function useStackStorageInternal() {
     getDailyTotals,
     calculateStreak,
     reorderItems,
+    getDailyNote,
+    setDailyNote,
     reload: loadData,
   };
 }
