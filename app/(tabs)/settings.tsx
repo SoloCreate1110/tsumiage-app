@@ -1,8 +1,4 @@
-/**
- * 設定画面
- */
-
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
+﻿import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -23,15 +19,17 @@ export default function SettingsScreen() {
     settings: notificationSettings,
     enableNotification,
     disableNotification,
+    permissionStatus,
   } = useNotificationSettings();
+  const notificationUnsupported = permissionStatus === "unsupported";
 
   const handleToggleNotification = async (value: boolean) => {
     if (value) {
       const success = await enableNotification("20:00");
       if (!success) {
         Alert.alert(
-          "通知権限が必要です",
-          "通知を有効にするには、アプリの通知権限を許可してください。"
+          "通知が許可されていません",
+          "通知を受け取るには、端末の設定で通知を許可してください。",
         );
       }
     } else {
@@ -41,16 +39,16 @@ export default function SettingsScreen() {
 
   const handleExportData = () => {
     Alert.alert(
-      "データエクスポート",
-      `${items.length}個の項目と${records.length}件の記録があります。\n\n現在のバージョンではクリップボードへのコピーのみ対応しています。`,
-      [{ text: "OK" }]
+      "データの概要",
+      `${items.length}個の項目と${records.length}件の記録があります。\n\n現在はコピーのみ対応しています。`,
+      [{ text: "OK" }],
     );
   };
 
   const handleClearData = () => {
     Alert.alert(
       "データを削除",
-      "すべての項目と記録を削除しますか？\nこの操作は取り消せません。",
+      "すべての項目と記録を削除します。\nこの操作は元に戻せません。",
       [
         { text: "キャンセル", style: "cancel" },
         {
@@ -60,13 +58,13 @@ export default function SettingsScreen() {
             try {
               await AsyncStorage.multiRemove(["stack_items", "stack_records"]);
               await reload();
-              Alert.alert("完了", "すべてのデータを削除しました。");
+              Alert.alert("完了", "データを削除しました。");
             } catch (error) {
               Alert.alert("エラー", "データの削除に失敗しました。");
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -123,13 +121,10 @@ export default function SettingsScreen() {
         },
       ]}
     >
+      <View style={styles.header}>
+        <ThemedText type="title">設定</ThemedText>
+      </View>
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* ヘッダー */}
-        <View style={styles.header}>
-          <ThemedText type="title">設定</ThemedText>
-        </View>
-
-        {/* 通知セクション */}
         <View style={styles.section}>
           <ThemedText
             style={[styles.sectionTitle, { color: colors.textSecondary }]}
@@ -144,16 +139,17 @@ export default function SettingsScreen() {
               ]}
             >
               <View style={styles.settingContent}>
-                <ThemedText type="defaultSemiBold">
-                  毎日のリマインダー
-                </ThemedText>
+                <ThemedText type="defaultSemiBold">毎日のリマインダー</ThemedText>
                 <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-                  {notificationSettings.time}に通知します
+                  {notificationUnsupported
+                    ? "Expo Goでは通知が使えません"
+                    : `${notificationSettings.time}に通知します`}
                 </ThemedText>
               </View>
               <Switch
                 value={notificationSettings.enabled}
                 onValueChange={handleToggleNotification}
+                disabled={notificationUnsupported}
                 trackColor={{ false: colors.border, true: colors.tint + "80" }}
                 thumbColor={notificationSettings.enabled ? colors.tint : "#f4f3f4"}
               />
@@ -161,7 +157,6 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* データセクション */}
         <View style={styles.section}>
           <ThemedText
             style={[styles.sectionTitle, { color: colors.textSecondary }]}
@@ -172,22 +167,21 @@ export default function SettingsScreen() {
             <SettingItem
               icon="chart.bar.fill"
               iconColor="#2196F3"
-              title="データエクスポート"
+              title="データをコピー"
               subtitle={`${items.length}個の項目、${records.length}件の記録`}
               onPress={handleExportData}
             />
             <SettingItem
               icon="trash.fill"
               iconColor={colors.error}
-              title="すべてのデータを削除"
-              subtitle="項目と記録をすべて削除します"
+              title="データを削除"
+              subtitle="すべての項目と記録を削除します"
               onPress={handleClearData}
               danger
             />
           </View>
         </View>
 
-        {/* アプリ情報セクション */}
         <View style={styles.section}>
           <ThemedText
             style={[styles.sectionTitle, { color: colors.textSecondary }]}
@@ -205,13 +199,12 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* フッター */}
         <View style={styles.footer}>
           <ThemedText style={{ color: colors.textDisabled, fontSize: 12 }}>
             積み上げアプリ
           </ThemedText>
           <ThemedText style={{ color: colors.textDisabled, fontSize: 12 }}>
-            毎日の積み上げで成長を実感しよう
+            今日の積み上げを続けましょう
           </ThemedText>
         </View>
 

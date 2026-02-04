@@ -19,7 +19,12 @@ export interface PomodoroState {
 const WORK_DURATION = 25 * 60; // 25分
 const BREAK_DURATION = 5 * 60; // 5分
 
-export function usePomodoroTimer() {
+interface PomodoroOptions {
+  onWorkComplete?: () => void;
+  onStop?: (elapsedSeconds: number) => void;
+}
+
+export function usePomodoroTimer(options?: PomodoroOptions) {
   const [state, setState] = useState<PomodoroState>({
     phase: "idle",
     timeLeft: WORK_DURATION,
@@ -29,6 +34,15 @@ export function usePomodoroTimer() {
   });
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // コールバックをRefに保存
+  const onWorkCompleteRef = useRef(options?.onWorkComplete);
+  const onStopRef = useRef(options?.onStop);
+
+  useEffect(() => {
+    onWorkCompleteRef.current = options?.onWorkComplete;
+    onStopRef.current = options?.onStop;
+  }, [options?.onWorkComplete, options?.onStop]);
 
   // タイマーの更新
   useEffect(() => {
@@ -50,6 +64,12 @@ export function usePomodoroTimer() {
           if (prev.phase === "work") {
             // 作業終了 → 休憩開始
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+            // コールバック実行
+            if (onWorkCompleteRef.current) {
+              onWorkCompleteRef.current();
+            }
+
             return {
               ...prev,
               phase: "break",
@@ -81,7 +101,7 @@ export function usePomodoroTimer() {
         clearInterval(intervalRef.current);
       }
     };
-  }, [state.isRunning]);
+  }, [state.isRunning]); // onWorkCompleteRefは依存に含めなくて良い
 
   const startPomodoro = useCallback(() => {
     setState({
@@ -108,12 +128,22 @@ export function usePomodoroTimer() {
   }, []);
 
   const stopPomodoro = useCallback(() => {
-    setState({
-      phase: "idle",
-      timeLeft: WORK_DURATION,
-      totalTime: WORK_DURATION,
-      isRunning: false,
-      sessionsCompleted: 0,
+    setState((prev) => {
+      // 作業中の場合、経過時間を計算してコールバック
+      if (prev.phase === "work" && onStopRef.current) {
+        const elapsed = prev.totalTime - prev.timeLeft;
+        if (elapsed > 0) {
+          onStopRef.current(elapsed);
+        }
+      }
+
+      return {
+        phase: "idle",
+        timeLeft: WORK_DURATION,
+        totalTime: WORK_DURATION,
+        isRunning: false,
+        sessionsCompleted: 0,
+      };
     });
   }, []);
 

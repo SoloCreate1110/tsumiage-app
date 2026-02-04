@@ -1,10 +1,7 @@
-/**
- * カレンダービュー - 月間カレンダーで継続状況を可視化
- */
-
-import { useMemo, useState } from "react";
+﻿import { useMemo, useRef, useCallback, useEffect } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -12,86 +9,124 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
+import { getTodayDate, toDateString } from "@/types/stack";
+import { shareView } from "@/utils/share";
 
 export default function CalendarScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
-  const { records, loading } = useStackStorage();
+  const { records, loading, reload } = useStackStorage();
+  const viewRef = useRef<View>(null);
+  const normalizeRecordDate = (value: string) => {
+    if (!value) return value;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const normalized = value.includes("/") ? value.replace(/\//g, "-") : value;
+    const head = normalized.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(head)) return head;
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return toDateString(parsed);
+    return value;
+  };
+  const handleShare = async () => {
+    await shareView(viewRef);
+  };
 
-  const [currentDate, setCurrentDate] = useState(new Date());
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload])
+  );
 
-  // 月の情報を計算
-  const monthInfo = useMemo(() => {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
+  useEffect(() => {
+    reload();
+  }, [records.length, reload]);
 
-    // 月の最初の日と最後の日
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
+  // ... (keep heatmapData calculation) ...
 
-    // 月の最初の日の曜日（0=日曜日）
-    const firstDayOfWeek = firstDay.getDay();
+  // 繝偵・繝医・繝・・逕ｨ縺ｮ繝・・繧ｿ繧堤函謌撰ｼ磯℃蜴ｻ20騾ｱ髢灘・・・
+  const heatmapData = useMemo(() => {
+    const today = getTodayDate();
+    const weeks = 20;
+    const daysToLoad = weeks * 7;
+    const data = [];
 
-    // 月の日数
-    const daysInMonth = lastDay.getDate();
-
-    // カレンダーに表示する日付の配列
-    const days: (number | null)[] = [];
-
-    // 最初の週の空白を埋める
-    for (let i = 0; i < firstDayOfWeek; i++) {
-      days.push(null);
-    }
-
-    // 日付を追加
-    for (let i = 1; i <= daysInMonth; i++) {
-      days.push(i);
-    }
-
-    return {
-      year,
-      month,
-      days,
-      monthName: `${year}年${month + 1}月`,
-    };
-  }, [currentDate]);
-
-  // 各日に記録があるかチェック
-  const hasRecordOnDate = useMemo(() => {
-    const recordDates = new Set(records.map((r) => r.date));
-    const result: Record<string, boolean> = {};
-
-    monthInfo.days.forEach((day) => {
-      if (day) {
-        const dateStr = `${monthInfo.year}-${String(monthInfo.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        result[day] = recordDates.has(dateStr);
-      }
+    // 記録日ごとの件数を集計
+    const activityMap = new Map<string, number>();
+    records.forEach((r) => {
+      const key = normalizeRecordDate(r.date);
+      const count = activityMap.get(key) || 0;
+      activityMap.set(key, count + 1);
     });
 
-    return result;
-  }, [records, monthInfo]);
+    // 右端が「今日」、列は週単位（上から日〜土）で揃える
+    const dayOfWeek = today.getDay(); // 0:日
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - dayOfWeek - (weeks - 1) * 7);
 
-  // 今日の日付
-  const today = new Date();
-  const isCurrentMonth =
-    today.getFullYear() === monthInfo.year &&
-    today.getMonth() === monthInfo.month;
-  const todayDate = isCurrentMonth ? today.getDate() : null;
+    // 日付ごとにレベルを算出
+    for (let i = 0; i < daysToLoad; i++) {
+      const d = new Date(startDate);
+      d.setDate(startDate.getDate() + i);
+      const dateStr = toDateString(d);
+      const count = activityMap.get(dateStr) || 0;
 
-  // 前月へ
-  const handlePrevMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
-  };
+      let level = 0;
+      if (count > 0) {
+        if (count === 1) level = 1;
+        else if (count <= 3) level = 2;
+        else if (count <= 5) level = 3;
+        else level = 4;
+      }
 
-  // 次月へ
-  const handleNextMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
-  };
+      data.push({
+        date: dateStr,
+        dateObj: d,
+        count,
+        level
+      });
+    }
 
-  // 今月へ
-  const handleToday = () => {
-    setCurrentDate(new Date());
+    return data;
+  }, [records]);
+
+  // 日莉倥ョ繝ｼ繧ｿ繧帝ｱ縺斐→縺ｮ驟榊・縺ｫ螟画鋤 [騾ｱ髢転[譖懈律]
+  const weeksData = useMemo(() => {
+    const weeks = [];
+    let currentWeek = [];
+
+    for (let i = 0; i < heatmapData.length; i++) {
+      currentWeek.push(heatmapData[i]);
+      if (currentWeek.length === 7) {
+        weeks.push(currentWeek);
+        currentWeek = [];
+      }
+    }
+    if (currentWeek.length > 0) {
+      weeks.push(currentWeek);
+    }
+    return weeks;
+  }, [heatmapData]);
+
+  const getLevelColor = (level: number) => {
+    // 邱醍ｳｻ縺ｮ濶ｲ・郁拷・・
+    if (colorScheme === 'dark') {
+      switch (level) {
+        case 1: return "#0E4429";
+        case 2: return "#006D32";
+        case 3: return "#26A641";
+        case 4: return "#39D353";
+        default: return "#161B22";
+      }
+    } else {
+      switch (level) {
+        case 1: return "#9BE9A8";
+        case 2: return "#40C463";
+        case 3: return "#30A14E";
+        case 4: return "#216E39";
+        default: return "#EBEDF0";
+      }
+    }
   };
 
   if (loading) {
@@ -111,132 +146,89 @@ export default function CalendarScreen() {
         },
       ]}
     >
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* ヘッダー */}
-        <View style={styles.header}>
-          <ThemedText type="title">カレンダー</ThemedText>
+      {/* ヘッダー（固定） */}
+      <View style={styles.header}>
+        <View>
+          <ThemedText type="title">活動記録</ThemedText>
           <ThemedText style={{ color: colors.textSecondary }}>
-            継続状況を確認しましょう
+            日々の積み上げを可視化しましょう
           </ThemedText>
         </View>
-
-        {/* 月の切り替え */}
-        <View style={styles.monthSelector}>
-          <Pressable onPress={handlePrevMonth} style={styles.monthButton}>
-            <IconSymbol name="arrow.left" size={20} color={colors.tint} />
-          </Pressable>
-
-          <ThemedText type="subtitle">{monthInfo.monthName}</ThemedText>
-
-          <Pressable onPress={handleNextMonth} style={styles.monthButton}>
-            <IconSymbol name="chevron.right" size={20} color={colors.tint} />
-          </Pressable>
-        </View>
-
-        <Pressable onPress={handleToday} style={styles.todayButton}>
-          <ThemedText style={{ color: colors.tint, fontSize: 14 }}>
-            今月へ
-          </ThemedText>
+        <Pressable onPress={handleShare} style={{ padding: Spacing.s }}>
+          <IconSymbol name="square.and.arrow.up" size={24} color={colors.tint} />
         </Pressable>
+      </View>
 
-        {/* カレンダー */}
-        <View style={[styles.calendar, { backgroundColor: colors.card }]}>
-          {/* 曜日ヘッダー */}
-          <View style={styles.weekHeader}>
-            {["日", "月", "火", "水", "木", "金", "土"].map((day, index) => (
-              <View key={day} style={styles.dayHeader}>
-                <ThemedText
-                  style={[
-                    styles.dayHeaderText,
-                    {
-                      color:
-                        index === 0
-                          ? "#FF5252"
-                          : index === 6
-                          ? "#2196F3"
-                          : colors.textSecondary,
-                    },
-                  ]}
-                >
-                  {day}
-                </ThemedText>
+      {/* 繧ｭ繝｣繝励メ繝｣蟇ｾ雎｡ */}
+      <View
+        ref={viewRef}
+        collapsable={false}
+        style={{ flex: 1, backgroundColor: colors.background }} // 閭梧勹濶ｲ繧呈欠螳壹＠縺ｪ縺・→騾城℃縺ｫ縺ｪ繧句庄閭ｽ諤ｧ
+      >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+        >
+          {/* 繝偵・繝医・繝・・繧ｳ繝ｳ繝・リ */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.heatmapScroll}
+            contentContainerStyle={styles.heatmapContent}
+          >
+            <View style={styles.heatmapGrid}>
+              {/* 曜日ラベル（日〜土） */}
+              <View style={styles.dayLabels}>
+                {["日", "月", "火", "水", "木", "金", "土"].map((d) => (
+                  <ThemedText key={d} style={styles.dayLabel}>
+                    {d}
+                  </ThemedText>
+                ))}
               </View>
-            ))}
-          </View>
 
-          {/* 日付グリッド */}
-          <View style={styles.daysGrid}>
-            {monthInfo.days.map((day, index) => {
-              const isToday = day === todayDate;
-              const hasRecord = day ? hasRecordOnDate[day] : false;
-
-              return (
-                <View key={index} style={styles.dayCell}>
-                  {day ? (
-                    <View
-                      style={[
-                        styles.dayContent,
-                        isToday && {
-                          backgroundColor: colors.tint + "20",
-                          borderColor: colors.tint,
-                          borderWidth: 2,
-                        },
-                      ]}
-                    >
-                      <ThemedText
+              {/* 繧ｰ繝ｪ繝・ラ譛ｬ菴・*/}
+              <View style={styles.weeksContainer}>
+                {weeksData.map((week, wIndex) => (
+                  <View key={wIndex} style={styles.weekColumn}>
+                    {week.map((day, dIndex) => (
+                      <View
+                        key={day.date}
                         style={[
-                          styles.dayNumber,
-                          isToday && { color: colors.tint, fontWeight: "bold" },
+                          styles.cell,
+                          { backgroundColor: getLevelColor(day.level) }
                         ]}
-                      >
-                        {day}
-                      </ThemedText>
-                      {hasRecord && (
-                        <View
-                          style={[
-                            styles.recordDot,
-                            { backgroundColor: colors.success },
-                          ]}
-                        />
-                      )}
-                    </View>
-                  ) : (
-                    <View style={styles.emptyDay} />
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        </View>
+                      />
+                    ))}
+                  </View>
+                ))}
+              </View>
+            </View>
+          </ScrollView>
 
-        {/* 凡例 */}
-        <View style={styles.legend}>
-          <View style={styles.legendItem}>
-            <View
-              style={[styles.legendDot, { backgroundColor: colors.success }]}
-            />
-            <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-              記録あり
-            </ThemedText>
+          {/* 蜃｡萓・*/}
+          <View style={styles.legendContainer}>
+            <ThemedText style={{ fontSize: 12, color: colors.textSecondary, marginRight: 8 }}>少</ThemedText>
+            {[0, 1, 2, 3, 4].map(level => (
+              <View
+                key={level}
+                style={[styles.legendCell, { backgroundColor: getLevelColor(level) }]}
+              />
+            ))}
+            <ThemedText style={{ fontSize: 12, color: colors.textSecondary, marginLeft: 8 }}>多</ThemedText>
           </View>
-          <View style={styles.legendItem}>
-            <View
-              style={[
-                styles.legendBox,
-                {
-                  backgroundColor: colors.tint + "20",
-                  borderColor: colors.tint,
-                },
-              ]}
-            />
-            <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-              今日
-            </ThemedText>
-          </View>
-        </View>
 
-        <View style={{ height: 100 }} />
-      </ScrollView>
+          <View style={styles.statsContainer}>
+            <ThemedText type="subtitle" style={{ marginBottom: Spacing.m }}>週間サマリー</ThemedText>
+            <View style={[styles.statCard, { backgroundColor: colors.card }]}>
+              <ThemedText style={{ color: colors.textSecondary }}>活動日数</ThemedText>
+              <ThemedText type="title" style={{ color: colors.tint }}>
+                {heatmapData.filter(d => d.count > 0).length}日
+              </ThemedText>
+            </View>
+          </View>
+
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      </View>
     </ThemedView>
   );
 }
@@ -252,94 +244,74 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: Spacing.m,
     paddingBottom: Spacing.m,
-  },
-  monthSelector: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+  heatmapScroll: {
+    marginVertical: Spacing.m,
+  },
+  heatmapContent: {
     paddingHorizontal: Spacing.m,
-    marginBottom: Spacing.s,
   },
-  monthButton: {
-    padding: Spacing.s,
+  heatmapGrid: {
+    flexDirection: 'row',
   },
-  todayButton: {
-    alignSelf: "center",
-    paddingVertical: Spacing.xs,
+  dayLabels: {
+    justifyContent: 'space-between',
+    marginRight: Spacing.s,
+    paddingVertical: 2,
+    height: (12 + 4) * 7,
+  },
+  dayLabel: {
+    fontSize: 10,
+    height: 16,
+    lineHeight: 16,
+    opacity: 0.5,
+  },
+  weeksContainer: {
+    flexDirection: 'row',
+    gap: 3,
+  },
+  weekColumn: {
+    gap: 3,
+  },
+  cell: {
+    width: 14,
+    height: 14,
+    borderRadius: 2,
+  },
+  legendContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
     paddingHorizontal: Spacing.m,
-    marginBottom: Spacing.m,
+    marginBottom: Spacing.l,
   },
-  calendar: {
-    marginHorizontal: Spacing.m,
+  legendCell: {
+    width: 12,
+    height: 12,
+    borderRadius: 2,
+    marginHorizontal: 2,
+  },
+  statsContainer: {
+    paddingHorizontal: Spacing.m,
+  },
+  statCard: {
     padding: Spacing.m,
     borderRadius: BorderRadius.card,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  weekHeader: {
-    flexDirection: "row",
-    marginBottom: Spacing.s,
-  },
-  dayHeader: {
-    flex: 1,
-    alignItems: "center",
-  },
-  dayHeaderText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  daysGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  dayCell: {
-    width: "14.28%", // 7日分
-    aspectRatio: 1,
-    padding: 2,
-  },
-  dayContent: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 8,
-    position: "relative",
-  },
-  emptyDay: {
-    flex: 1,
-  },
-  dayNumber: {
-    fontSize: 14,
-  },
-  recordDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    position: "absolute",
-    bottom: 4,
-  },
-  legend: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: Spacing.l,
-    marginTop: Spacing.l,
-  },
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  legendBox: {
-    width: 16,
-    height: 16,
-    borderRadius: 4,
-    borderWidth: 2,
-  },
+    alignItems: 'center',
+  }
 });
+
+
+
+
+
+
+
+
+
+
+
+

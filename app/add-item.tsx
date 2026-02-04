@@ -1,5 +1,5 @@
-/**
- * 新規項目追加モーダル
+﻿/**
+ * 新規項目保存繝｢繝ｼ繝繝ｫ
  */
 
 import { router } from "expo-router";
@@ -53,7 +53,7 @@ export default function AddItemModal() {
         },
       ]}
     >
-      {/* ヘッダー */}
+      {/* 繝倥ャ繝繝ｼ */}
       <View style={styles.header}>
         <Pressable onPress={handleCancel} style={styles.headerButton}>
           <ThemedText style={{ color: colors.tint }}>キャンセル</ThemedText>
@@ -70,13 +70,13 @@ export default function AddItemModal() {
               fontWeight: "600",
             }}
           >
-            追加
+            保存
           </ThemedText>
         </Pressable>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* 項目名 */}
+        {/* 項目名*/}
         <View style={styles.section}>
           <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
             項目名
@@ -90,7 +90,7 @@ export default function AddItemModal() {
                 borderColor: colors.border,
               },
             ]}
-            placeholder="例: 読書、筋トレ、勉強..."
+            placeholder="例: 読書、筋トレ、学習..."
             placeholderTextColor={colors.textDisabled}
             value={name}
             onChangeText={setName}
@@ -98,7 +98,7 @@ export default function AddItemModal() {
           />
         </View>
 
-        {/* タイプ選択 */}
+        {/* 繧ｿ繧､繝鈴∈謚・*/}
         <View style={styles.section}>
           <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
             タイプ
@@ -134,7 +134,7 @@ export default function AddItemModal() {
                   { color: type === "time" ? "#fff" : colors.textSecondary },
                 ]}
               >
-                タイマーで計測
+                時間を積み上げ
               </ThemedText>
             </Pressable>
 
@@ -168,13 +168,13 @@ export default function AddItemModal() {
                   { color: type === "count" ? "#fff" : colors.textSecondary },
                 ]}
               >
-                カウンターで記録
+                回数を記録
               </ThemedText>
             </Pressable>
           </View>
         </View>
 
-        {/* アイコン選択 */}
+        {/* アイコン驕ｸ謚・*/}
         <View style={styles.section}>
           <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
             アイコン
@@ -210,7 +210,7 @@ export default function AddItemModal() {
           </View>
         </View>
 
-        {/* カラー選択 */}
+        {/* カラー驕ｸ謚・*/}
         <View style={styles.section}>
           <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
             カラー
@@ -375,3 +375,5 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+
+

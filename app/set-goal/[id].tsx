@@ -1,24 +1,17 @@
-/**
- * 目標設定モーダル
- */
-
-import { router, useLocalSearchParams } from "expo-router";
-import { useMemo, useState } from "react";
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-} from "react-native";
+﻿import { router, useLocalSearchParams } from "expo-router";
+import { useMemo, useState, useEffect } from "react";
+import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
+import { IconSymbol } from "@/components/ui/icon-symbol";
+import { TimeInput } from "@/components/ui/time-input";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
-import { Goal, calculateDaysRemaining } from "@/types/stack";
+import { Goal, calculateDaysRemaining, formatCount, formatTime, getTodayString, toDateString } from "@/types/stack";
 
 export default function SetGoalModal() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -29,27 +22,63 @@ export default function SetGoalModal() {
 
   const item = useMemo(() => items.find((i) => i.id === id), [items, id]);
 
-  const [daily, setDaily] = useState(item?.goal?.daily?.toString() || "");
-  const [weekly, setWeekly] = useState(item?.goal?.weekly?.toString() || "");
-  const [monthly, setMonthly] = useState(item?.goal?.monthly?.toString() || "");
-  const [dailyDeadline, setDailyDeadline] = useState(item?.goal?.dailyDeadline || "");
-  const [weeklyDeadline, setWeeklyDeadline] = useState(item?.goal?.weeklyDeadline || "");
-  const [monthlyDeadline, setMonthlyDeadline] = useState(item?.goal?.monthlyDeadline || "");
+  // State
+  const [target, setTarget] = useState(item?.goal?.target?.toString() || "");
+  const [deadline, setDeadline] = useState(item?.goal?.deadline || "");
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [dailyPace, setDailyPace] = useState<number | null>(null);
 
-  const daysRemainingDaily = dailyDeadline ? calculateDaysRemaining(dailyDeadline) : null;
-  const daysRemainingWeekly = weeklyDeadline ? calculateDaysRemaining(weeklyDeadline) : null;
-  const daysRemainingMonthly = monthlyDeadline ? calculateDaysRemaining(monthlyDeadline) : null;
+  // Sync saved goal when reopening
+  useEffect(() => {
+    if (!item) return;
+    setTarget(item.goal?.target?.toString() || "");
+    setDeadline(item.goal?.deadline || "");
+  }, [item]);
+
+  // Calculate suggested daily pace
+  useEffect(() => {
+    if (target && deadline && item) {
+      const targetVal = parseInt(target, 10);
+      const days = calculateDaysRemaining(deadline);
+      const current = item.totalValue || 0;
+      const remaining = Math.max(0, targetVal - current);
+
+      if (days > 0) {
+        setDailyPace(Math.ceil(remaining / days));
+      } else {
+        setDailyPace(remaining); // If today is deadline, do it all
+      }
+    } else {
+      setDailyPace(null);
+    }
+  }, [target, deadline, item]);
+
+  const handleDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (event.type === "dismissed") {
+      setShowDatePicker(false);
+      return;
+    }
+
+    if (Platform.OS === "android") {
+      setShowDatePicker(false);
+    }
+
+    if (selectedDate) {
+      const dateStr = toDateString(selectedDate);
+      setDeadline(dateStr);
+    }
+  };
 
   const handleSave = async () => {
-    if (!id) return;
+    if (!id || !item) return;
+
+    if (!target || !deadline) return; // Validation
 
     const goal: Goal = {
-      daily: daily ? parseInt(daily, 10) : undefined,
-      weekly: weekly ? parseInt(weekly, 10) : undefined,
-      monthly: monthly ? parseInt(monthly, 10) : undefined,
-      dailyDeadline: dailyDeadline || undefined,
-      weeklyDeadline: weeklyDeadline || undefined,
-      monthlyDeadline: monthlyDeadline || undefined,
+      target: parseInt(target, 10),
+      deadline: deadline,
+      startTotal: item.totalValue,
+      startDate: getTodayString(),
     };
 
     await updateItem(id, { goal });
@@ -69,68 +98,8 @@ export default function SetGoalModal() {
   }
 
   const unit = item.type === "time" ? "秒" : "回";
-  const timeHint = item.type === "time" ? "（例: 3600 = 1時間）" : "";
-
-  const renderGoalSection = (
-    title: string,
-    value: string,
-    onChangeText: (text: string) => void,
-    placeholder: string,
-    deadline: string,
-    onDeadlineChange: (text: string) => void,
-    daysRemaining: number | null
-  ) => (
-    <View style={styles.section}>
-      <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-        {title}
-      </ThemedText>
-      <View style={styles.inputRow}>
-        <TextInput
-          style={[
-            styles.input,
-            {
-              backgroundColor: colors.card,
-              color: colors.text,
-              borderColor: colors.border,
-            },
-          ]}
-          placeholder={placeholder}
-          placeholderTextColor={colors.textDisabled}
-          value={value}
-          onChangeText={onChangeText}
-          keyboardType="numeric"
-        />
-        <ThemedText style={[styles.unit, { color: colors.textSecondary }]}>
-          {unit}
-        </ThemedText>
-      </View>
-      <TextInput
-        style={[
-          styles.input,
-          {
-            backgroundColor: colors.card,
-            color: colors.text,
-            borderColor: colors.border,
-            marginTop: Spacing.s,
-          },
-        ]}
-        placeholder="期限（YYYY-MM-DD）"
-        placeholderTextColor={colors.textDisabled}
-        value={deadline}
-        onChangeText={onDeadlineChange}
-      />
-      {daysRemaining !== null && (
-        <ThemedText
-          style={[
-            styles.daysRemaining,
-            { color: daysRemaining === 0 ? colors.error : colors.textSecondary },
-          ]}
-        >
-          残り {daysRemaining} 日
-        </ThemedText>
-      )}
-    </View>
-  );
+  const daysRemaining = deadline ? calculateDaysRemaining(deadline) : null;
+  const currentTotal = item.totalValue || 0;
 
   return (
     <ThemedView
@@ -142,85 +111,126 @@ export default function SetGoalModal() {
         },
       ]}
     >
-      {/* ヘッダー */}
       <View style={styles.header}>
         <Pressable onPress={handleCancel} style={styles.headerButton}>
           <ThemedText style={{ color: colors.tint }}>キャンセル</ThemedText>
         </Pressable>
         <ThemedText type="subtitle">目標設定</ThemedText>
         <Pressable onPress={handleSave} style={styles.headerButton}>
-          <ThemedText
-            style={{
-              color: colors.tint,
-              fontWeight: "600",
-            }}
-          >
-            保存
-          </ThemedText>
+          <ThemedText style={{ color: colors.tint, fontWeight: "600" }}>
+            保存</ThemedText>
         </Pressable>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* 項目情報 */}
         <View style={[styles.itemInfo, { backgroundColor: colors.card }]}>
           <ThemedText type="defaultSemiBold">{item.name}</ThemedText>
           <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-            {item.type === "time" ? "時間を積み上げ" : "回数を積み上げ"}
+            現在の累計: {item.type === "time" ? formatTime(currentTotal) : formatCount(currentTotal)}
           </ThemedText>
         </View>
 
-        {/* 説明 */}
+        {/* Total Target Section */}
         <View style={styles.section}>
-          <ThemedText style={{ color: colors.textSecondary, lineHeight: 22 }}>
-            目標を設定すると、達成率が表示されます。目標は日次・週次・月次で設定できます。期限を設定すると残日数が表示されます。
-            {timeHint}
-          </ThemedText>
+          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
+            目標値を設定</ThemedText>
+          <ThemedText style={{ marginBottom: Spacing.s, color: colors.textSecondary, fontSize: 14 }}>
+            いつまでにどれくらい達成したいかを入力</ThemedText>
+
+          {item.type === "time" ? (
+            <View style={{ marginBottom: Spacing.s }}>
+              <TimeInput
+                value={target ? parseInt(target, 10) : 0}
+                onChange={(seconds) => setTarget(seconds.toString())}
+              />
+            </View>
+          ) : (
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                placeholder="例: 1000"
+                placeholderTextColor={colors.textDisabled}
+                value={target}
+                onChangeText={setTarget}
+                keyboardType="numeric"
+              />
+              <ThemedText style={{ color: colors.textSecondary, marginLeft: Spacing.s }}>{unit}</ThemedText>
+            </View>
+          )}
         </View>
 
-        {/* 日次目標 */}
-        {renderGoalSection(
-          "日次目標",
-          daily,
-          setDaily,
-          `例: ${item.type === "time" ? "3600" : "10"}`,
-          dailyDeadline,
-          setDailyDeadline,
-          daysRemainingDaily
-        )}
+        {/* Deadline Section */}
+        <View style={styles.section}>
+          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
+            期限を設定</ThemedText>
 
-        {/* 週次目標 */}
-        {renderGoalSection(
-          "週次目標",
-          weekly,
-          setWeekly,
-          `例: ${item.type === "time" ? "25200" : "70"}`,
-          weeklyDeadline,
-          setWeeklyDeadline,
-          daysRemainingWeekly
-        )}
+          <View style={{ marginTop: Spacing.s }}>
+            {Platform.OS === 'web' ? (
+              <View style={[styles.input, { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderColor: colors.border }]}>
+                <TextInput
+                  style={{ flex: 1, color: colors.text, fontSize: 16 }}
+                  placeholder="期限 (YYYY-MM-DD)"
+                  placeholderTextColor={colors.textDisabled}
+                  value={deadline}
+                  onChangeText={setDeadline}
+                  // @ts-ignore
+                  type="date"
+                />
+                <IconSymbol name="calendar" size={20} color={colors.textSecondary} />
+              </View>
+            ) : (
+              <>
+                <Pressable
+                  onPress={() => setShowDatePicker(true)}
+                  style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.card, borderColor: colors.border }]}
+                >
+                  <ThemedText style={{ color: deadline ? colors.text : colors.textDisabled }}>
+                    {deadline || "日付を選択"}
+                  </ThemedText>
+                  <IconSymbol name="calendar" size={20} color={colors.textSecondary} />
+                </Pressable>
 
-        {/* 月次目標 */}
-        {renderGoalSection(
-          "月次目標",
-          monthly,
-          setMonthly,
-          `例: ${item.type === "time" ? "108000" : "300"}`,
-          monthlyDeadline,
-          setMonthlyDeadline,
-          daysRemainingMonthly
-        )}
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={deadline ? new Date(deadline) : new Date()}
+                    mode="date"
+                    display="default"
+                    onChange={handleDateChange}
+                    minimumDate={new Date()}
+                  />
+                )}
+              </>
+            )}
+          </View>
+        </View>
 
-        {/* 時間の目安 */}
-        {item.type === "time" && (
-          <View style={[styles.hint, { backgroundColor: colors.tint + "10" }]}>
-            <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-              💡 時間の目安:{"\n"}
-              1時間 = 3600秒{"\n"}
-              7時間/週 = 25200秒{"\n"}
-              30時間/月 = 108000秒
-            </ThemedText>
+        {/* Simulation / Feedback Section */}
+        {daysRemaining !== null && dailyPace !== null && (
+          <View style={[styles.feedbackContainer, { backgroundColor: colors.tint + "10", borderColor: colors.tint }]}>
+            <View style={{ flexDirection: 'row', gap: Spacing.s, marginBottom: Spacing.s }}>
+              <IconSymbol name="flame.fill" size={24} color={colors.tint} />
+              <ThemedText type="defaultSemiBold" style={{ color: colors.tint }}>
+                プラン
+              </ThemedText>
+            </View>
+
+            <ThemedText style={{ color: colors.text }}>
+              期限まであと <ThemedText type="defaultSemiBold">{daysRemaining}日</ThemedText> 日です。            </ThemedText>
+
+            <View style={{ marginVertical: Spacing.s, padding: Spacing.m, backgroundColor: colors.card, borderRadius: BorderRadius.card }}>
+              <ThemedText style={{ textAlign: "center", color: colors.textSecondary, fontSize: 12 }}>
+                1日あたりの目安</ThemedText>
+              <ThemedText style={{ textAlign: "center", fontSize: 24, fontWeight: "bold", color: colors.text }}>
+                {item.type === "time" ? formatTime(dailyPace) : formatCount(dailyPace)}
+              </ThemedText>
+            </View>
+
+            <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+              このペースで続けると達成できます。</ThemedText>
           </View>
         )}
+
+        <View style={{ height: 100 }} />
       </ScrollView>
     </ThemedView>
   );
@@ -266,7 +276,6 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.s,
   },
   input: {
     flex: 1,
@@ -274,19 +283,16 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.button,
     padding: Spacing.m,
     fontSize: 16,
+    minHeight: 56,
   },
-  unit: {
-    fontSize: 16,
-    minWidth: 40,
-  },
-  daysRemaining: {
-    marginTop: Spacing.s,
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  hint: {
+  feedbackContainer: {
     padding: Spacing.m,
-    borderRadius: BorderRadius.button,
-    marginTop: Spacing.s,
-  },
+    borderRadius: BorderRadius.card,
+    borderWidth: 1,
+    marginTop: Spacing.m,
+  }
 });
+
+
+
+

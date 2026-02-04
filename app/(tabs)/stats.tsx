@@ -1,8 +1,9 @@
-/**
- * 統計画面 - 成長の可視化
+﻿/**
+ * 邨ｱ險育判髱｢ - 謌宣聞縺ｮ蜿ｯ隕門喧
  */
 
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
+import { useFocusEffect } from "expo-router";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Rect, Text as SvgText } from "react-native-svg";
@@ -13,15 +14,21 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
-import { formatCount, formatDate, formatTime } from "@/types/stack";
+import { formatCount, formatDate, formatTime, getTodayDate, toDateString } from "@/types/stack";
 
 export default function StatsScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
-  const { items, records, loading, getDailyTotals } = useStackStorage();
+  const { items, records, loading, getDailyTotals, reload } = useStackStorage();
 
-  // 全体の統計を計算
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload])
+  );
+
+  // 蜈ｨ菴薙・邨ｱ險医ｒ險育ｮ・
   const stats = useMemo(() => {
     const totalTimeItems = items.filter((i) => i.type === "time");
     const totalCountItems = items.filter((i) => i.type === "count");
@@ -29,14 +36,14 @@ export default function StatsScreen() {
     const totalTime = totalTimeItems.reduce((sum, i) => sum + i.totalValue, 0);
     const totalCount = totalCountItems.reduce((sum, i) => sum + i.totalValue, 0);
 
-    // 連続日数を計算
+    // 連続日数繧定ｨ育ｮ・
     const uniqueDates = [...new Set(records.map((r) => r.date))].sort();
     let streak = 0;
-    const today = new Date();
+    const today = getTodayDate();
     for (let i = 0; i < 365; i++) {
       const checkDate = new Date(today);
       checkDate.setDate(checkDate.getDate() - i);
-      const dateStr = checkDate.toISOString().split("T")[0];
+      const dateStr = toDateString(checkDate);
       if (uniqueDates.includes(dateStr)) {
         streak++;
       } else if (i > 0) {
@@ -53,16 +60,16 @@ export default function StatsScreen() {
     };
   }, [items, records]);
 
-  // 過去7日間のグラフデータ（全項目合計）
+  // 驕主悉7日髢薙・繧ｰ繝ｩ繝輔ョ繝ｼ繧ｿ・亥・鬆・岼蜷郁ｨ茨ｼ・
   const chartData = useMemo(() => {
     const days = 7;
     const result: { date: string; timeValue: number; countValue: number }[] = [];
-    const today = new Date();
+    const today = getTodayDate();
 
     for (let i = days - 1; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split("T")[0];
+      const dateStr = toDateString(date);
 
       let timeValue = 0;
       let countValue = 0;
@@ -93,7 +100,7 @@ export default function StatsScreen() {
     );
   }
 
-  // グラフの最大値を計算
+  // 繧ｰ繝ｩ繝輔・譛螟ｧ蛟､繧定ｨ育ｮ・
   const maxTimeValue = Math.max(...chartData.map((d) => d.timeValue), 1);
   const maxCountValue = Math.max(...chartData.map((d) => d.countValue), 1);
 
@@ -111,23 +118,24 @@ export default function StatsScreen() {
         },
       ]}
     >
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* ヘッダー */}
-        <View style={styles.header}>
-          <ThemedText type="title">統計</ThemedText>
-          <ThemedText style={{ color: colors.textSecondary }}>
-            あなたの成長を確認しましょう
-          </ThemedText>
-        </View>
+      {/* ヘッダー（固定） */}
+      <View style={styles.header}>
+        <ThemedText type="title">統計</ThemedText>
+        <ThemedText style={{ color: colors.textSecondary }}>
+          あなたの頑張りを見える化します
+        </ThemedText>
+      </View>
 
-        {/* サマリーカード */}
+      <ScrollView showsVerticalScrollIndicator={false}>
+
+        {/* 繧ｵ繝槭Μ繝ｼ繧ｫ繝ｼ繝・*/}
         <View style={styles.summaryGrid}>
           <View style={[styles.summaryCard, { backgroundColor: colors.card }]}>
             <View style={[styles.summaryIcon, { backgroundColor: colors.tint + "20" }]}>
               <IconSymbol name="clock.fill" size={24} color={colors.tint} />
             </View>
             <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-              累計時間
+              合計時間
             </ThemedText>
             <ThemedText type="subtitle" style={{ color: colors.tint }}>
               {formatTime(stats.totalTime)}
@@ -139,7 +147,7 @@ export default function StatsScreen() {
               <IconSymbol name="number" size={24} color={colors.success} />
             </View>
             <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-              累計回数
+              合計回数
             </ThemedText>
             <ThemedText type="subtitle" style={{ color: colors.success }}>
               {formatCount(stats.totalCount)}
@@ -171,11 +179,11 @@ export default function StatsScreen() {
           </View>
         </View>
 
-        {/* 時間グラフ */}
+        {/* 譎る俣繧ｰ繝ｩ繝・*/}
         {items.some((i) => i.type === "time") && (
           <View style={[styles.chartSection, { backgroundColor: colors.card }]}>
             <ThemedText type="subtitle" style={styles.chartTitle}>
-              過去7日間の時間
+              直近7日間の時間
             </ThemedText>
             <View style={styles.chartContainer}>
               <Svg width={chartWidth} height={chartHeight + 30}>
@@ -217,11 +225,11 @@ export default function StatsScreen() {
           </View>
         )}
 
-        {/* 回数グラフ */}
+        {/* 蝗樊焚繧ｰ繝ｩ繝・*/}
         {items.some((i) => i.type === "count") && (
           <View style={[styles.chartSection, { backgroundColor: colors.card }]}>
             <ThemedText type="subtitle" style={styles.chartTitle}>
-              過去7日間の回数
+              直近7日間の回数
             </ThemedText>
             <View style={styles.chartContainer}>
               <Svg width={chartWidth} height={chartHeight + 30}>
@@ -263,7 +271,7 @@ export default function StatsScreen() {
           </View>
         )}
 
-        {/* 項目がない場合 */}
+        {/* 鬆・岼縺後↑縺・ｴ蜷・*/}
         {items.length === 0 && (
           <View style={styles.emptyState}>
             <IconSymbol name="chart.bar.fill" size={48} color={colors.textDisabled} />
@@ -271,7 +279,7 @@ export default function StatsScreen() {
               まだデータがありません
             </ThemedText>
             <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-              項目を追加して積み上げを始めましょう
+              記録を追加してグラフを表示しましょう
             </ThemedText>
           </View>
         )}
@@ -341,3 +349,8 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xl,
   },
 });
+
+
+
+
+

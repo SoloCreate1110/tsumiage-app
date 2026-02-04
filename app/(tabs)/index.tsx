@@ -1,10 +1,12 @@
-/**
- * ホーム画面 - 積み上げ項目一覧
+﻿/**
+ * 繝帙・繝逕ｻ髱｢ - 遨阪∩荳翫￡鬆・岼荳隕ｧ
  */
 
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useMemo } from "react";
-import { FlatList, Pressable, StyleSheet, View } from "react-native";
+import * as Haptics from "expo-haptics";
+import { useCallback, useMemo, useState, useEffect } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
+import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { StackItemCard } from "@/components/stack-item-card";
@@ -14,24 +16,30 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
+import { getRandomQuote } from "@/constants/quotes";
+import { getTodayString, StackItem } from "@/types/stack";
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
-  const { items, loading, getTodayValue, reload } = useStackStorage();
+  const { items, loading, getTodayValue, calculateStreak, reorderItems, reload } = useStackStorage();
 
-  // getTodayValueのメモ化版を作成（パフォーマンス最適化）
+  const [quote, setQuote] = useState(getRandomQuote());
+
+  // getTodayValue縺ｮ繝｡繝｢蛹也沿繧剃ｽ懈・・医ヱ繝輔か繝ｼ繝槭Φ繧ｹ譛驕ｩ蛹厄ｼ・
   const memoizedGetTodayValue = useCallback(
     (itemId: string) => getTodayValue(itemId),
     [getTodayValue]
   );
 
-  // モーダルから戻った時にデータをリロード
+  // 繝｢繝ｼ繝繝ｫ縺九ｉ謌ｻ縺｣縺滓凾縺ｫ繝・・繧ｿ繧偵Μ繝ｭ繝ｼ繝会ｼ・錐險譖ｴ譁ｰ
   useFocusEffect(
     useCallback(() => {
       console.log('[HomeScreen] Screen focused, reloading data');
       reload();
+      // 逕ｻ髱｢繧定｡ｨ遉ｺ縺吶ｋ縺溘・縺ｫ蜷崎ｨ繧貞､峨∴繧九・縺梧･ｽ縺励＞
+      setQuote(getRandomQuote());
     }, [reload])
   );
 
@@ -43,6 +51,8 @@ export default function HomeScreen() {
     router.push(`/item/${id}`);
   }, []);
 
+  const streak = calculateStreak();
+
   if (loading) {
     return (
       <ThemedView style={[styles.container, styles.center]}>
@@ -50,6 +60,22 @@ export default function HomeScreen() {
       </ThemedView>
     );
   }
+
+  const renderItem = useCallback(
+    ({ item, drag, isActive }: RenderItemParams<StackItem>) => (
+      <StackItemCard
+        item={item}
+        todayValue={memoizedGetTodayValue(item.id)}
+        onPress={() => handleItemPress(item.id)}
+        onLongPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          drag();
+        }}
+        isActive={isActive}
+      />
+    ),
+    [memoizedGetTodayValue, handleItemPress]
+  );
 
   return (
     <ThemedView
@@ -60,30 +86,70 @@ export default function HomeScreen() {
         },
       ]}
     >
-      {/* ヘッダー */}
+      {/* 繝倥ャ繝繝ｼ */}
       <View style={styles.header}>
-        <ThemedText type="title">マイ記録</ThemedText>
-        <ThemedText style={{ color: colors.textSecondary }}>
-          {items.length}個の項目
+        <View>
+          <ThemedText style={styles.dateLabel}>
+            {new Date(`${getTodayString()}T00:00:00`).toLocaleDateString("ja-JP", {
+              month: "long",
+              day: "numeric",
+              weekday: "long",
+            })}
+          </ThemedText>
+          <ThemedText type="title" style={styles.greeting}>
+            こんにちは
+          </ThemedText>
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: Spacing.s }}>
+          <View style={[styles.streakBadge, { backgroundColor: colors.tint + "15" }]}>
+            <IconSymbol name="flame.fill" size={16} color={colors.tint} />
+            <ThemedText style={{ fontWeight: "bold", color: colors.tint, fontSize: 16 }}>
+              {streak}
+            </ThemedText>
+            <ThemedText style={{ fontSize: 10, color: colors.tint, marginTop: -2 }}>
+              連続日数
+            </ThemedText>
+          </View>
+          <Pressable
+            onPress={() => router.push("/settings")}
+            style={{
+              padding: Spacing.s,
+              backgroundColor: colors.card,
+              borderRadius: BorderRadius.button,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
+          >
+            <IconSymbol name="gearshape.fill" size={20} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+      </View>
+
+      {/* 名言 */}
+      <View style={[styles.quoteContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <IconSymbol name="quote.bubble" size={20} color={colors.textSecondary} style={{ marginBottom: 4 }} />
+        <ThemedText style={[styles.quoteText, { color: colors.text }]}>
+          {quote.text}
+        </ThemedText>
+        <ThemedText style={[styles.quoteAuthor, { color: colors.textSecondary }]}>
+          ・{quote.author}
         </ThemedText>
       </View>
 
-      {/* 項目一覧 */}
+      {/* 鬆・岼荳隕ｧ */}
       {items.length > 0 ? (
-        <FlatList
+        <DraggableFlatList
           data={items}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <StackItemCard
-              item={item}
-              todayValue={memoizedGetTodayValue(item.id)}
-              onPress={() => handleItemPress(item.id)}
-            />
-          )}
-          removeClippedSubviews={true}
-          maxToRenderPerBatch={10}
-          updateCellsBatchingPeriod={50}
-          contentContainerStyle={styles.listContent}
+          renderItem={renderItem}
+          onDragEnd={({ data }) => reorderItems(data)}
+          dragEnabled
+          activationDistance={8}
+          scrollEnabled
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: insets.bottom + 220 },
+          ]}
           showsVerticalScrollIndicator={false}
         />
       ) : (
@@ -102,7 +168,8 @@ export default function HomeScreen() {
           <ThemedText
             style={[styles.emptyText, { color: colors.textSecondary }]}
           >
-            下のボタンから積み上げたい項目を{"\n"}追加してみましょう
+            下のボタンから積み上げたい項目を{"\n"}
+            追加してみましょう
           </ThemedText>
         </View>
       )}
@@ -129,6 +196,45 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: Spacing.m,
     paddingBottom: Spacing.m,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  dateLabel: {
+    fontSize: 13,
+    opacity: 0.6,
+    marginBottom: 4,
+    fontWeight: "600",
+  },
+  greeting: {
+    fontSize: 28,
+  },
+  streakBadge: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.05)",
+  },
+  quoteContainer: {
+    marginHorizontal: Spacing.m,
+    marginBottom: Spacing.m,
+    padding: Spacing.m,
+    borderRadius: BorderRadius.card,
+    borderWidth: 1,
+    borderLeftWidth: 4,
+  },
+  quoteText: {
+    fontSize: 14,
+    fontStyle: "italic",
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  quoteAuthor: {
+    fontSize: 12,
+    textAlign: "right",
   },
   listContent: {
     paddingHorizontal: Spacing.m,
@@ -172,3 +278,4 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
 });
+

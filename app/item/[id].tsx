@@ -1,11 +1,11 @@
-/**
- * 項目詳細画面
- * タイマーまたはカウンター機能を提供
+﻿/**
+ * 鬆・岼隧ｳ邏ｰ逕ｻ髱｢
+ * 繧ｿ繧､繝槭・縺ｾ縺溘・繧ｫ繧ｦ繝ｳ繧ｿ繝ｼ讖溯・繧呈署萓・
  */
 
 import * as Haptics from "expo-haptics";
-import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Alert,
   FlatList,
@@ -31,14 +31,15 @@ import { useStackStorage } from "@/hooks/use-stack-storage";
 import { usePomodoroTimer } from "@/hooks/use-pomodoro-timer";
 import {
   calculateGoalProgress,
-  calculatePeriodTotal,
+  calculateDaysRemaining,
   formatCount,
   formatDate,
   formatTime,
   formatTimeDetailed,
   StackRecord,
-  getTodayString,
 } from "@/types/stack";
+import { getLevelInfo } from "@/constants/levels";
+import { useSound } from "@/hooks/use-sound";
 
 interface GroupedRecord {
   date: string;
@@ -60,18 +61,25 @@ export default function ItemDetailScreen() {
     getRecordsByItem,
     getTodayValue,
     loading,
+    reload,
   } = useStackStorage();
 
   const item = useMemo(() => items.find((i) => i.id === id), [items, id]);
-  
-  // 記録を日付ごとにグループ化（最新10日分）
+
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload])
+  );
+
+  // 險倬鹸繧呈律莉倥＃縺ｨ縺ｫ繧ｰ繝ｫ繝ｼ繝怜喧・域怙譁ｰ10譌･蛻・ｼ・
   const groupedRecords = useMemo(() => {
     if (!id) return [];
     const allRecords = getRecordsByItem(id);
     const grouped: GroupedRecord[] = [];
     const dateMap = new Map<string, { count: number; totalValue: number }>();
 
-    // すべての記録を日付ごとに集計
+    // 縺吶∋縺ｦ縺ｮ險倬鹸繧呈律莉倥＃縺ｨ縺ｫ髮・ｨ・
     allRecords.forEach((record) => {
       if (dateMap.has(record.date)) {
         const existing = dateMap.get(record.date)!;
@@ -82,10 +90,10 @@ export default function ItemDetailScreen() {
       }
     });
 
-    // 日付でソート（新しい順）
+    // 譌･莉倥〒繧ｽ繝ｼ繝茨ｼ域眠縺励＞鬆・ｼ・
     const sortedDates = Array.from(dateMap.keys()).sort().reverse();
-    
-    // 最新の10日分に制限
+
+    // 譛譁ｰ縺ｮ10譌･蛻・↓蛻ｶ髯・
     sortedDates.slice(0, 10).forEach((date) => {
       const data = dateMap.get(date)!;
       grouped.push({ date, ...data });
@@ -99,23 +107,53 @@ export default function ItemDetailScreen() {
     [id, getTodayValue]
   );
 
-  // タイマー状態
+  const levelInfo = useMemo(() => {
+    if (!item) return null;
+    return getLevelInfo(item.type, item.totalValue);
+  }, [item]);
+
+  // 繧ｿ繧､繝槭・迥ｶ諷・
   const [isRunning, setIsRunning] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showPomodoroMode, setShowPomodoroMode] = useState(false);
-  const pomodoroTimer = usePomodoroTimer();
 
-  // カウンター状態
+  const { playSuccess } = useSound(); // Moved here
+
+  // 繝昴Δ繝峨・繝ｭ繧ｿ繧､繝槭・終了凾縺ｫ譎る俣繧貞刈邂・
+  const WORK_DURATION = 25 * 60; // 25蛻・
+
+  const handlePomodoroComplete = useCallback(async () => {
+    if (id) {
+      // 25蛻・・菴懈･ｭ縺悟ｮ御ｺ・＠縺溘ｉ縲・5蛻・ｒ險倬鹸縺ｫ霑ｽ蜉
+      await addRecord(id, WORK_DURATION);
+      await playSuccess();
+    }
+  }, [id, addRecord, playSuccess]);
+
+  const handlePomodoroStop = useCallback(async (elapsedSeconds: number) => {
+    if (id && elapsedSeconds > 0) {
+      // 騾比ｸｭ終了〒繧よ凾髢薙ｒ蜉邂・
+      await addRecord(id, elapsedSeconds);
+      await playSuccess();
+    }
+  }, [id, addRecord, playSuccess]);
+
+  const pomodoroTimer = usePomodoroTimer({
+    onWorkComplete: handlePomodoroComplete,
+    onStop: handlePomodoroStop
+  });
+
+  // 繧ｫ繧ｦ繝ｳ繧ｿ繝ｼ迥ｶ諷・
   const [countValue, setCountValue] = useState(1);
 
-  // アニメーション
+  // 繧｢繝九Γ繝ｼ繧ｷ繝ｧ繝ｳ
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
-  // タイマー処理
+  // 繧ｿ繧､繝槭・蜃ｦ逅・
   useEffect(() => {
     if (!isRunning) {
       if (timerRef.current) {
@@ -163,16 +201,7 @@ export default function ItemDetailScreen() {
     }
   };
 
-  // ポモドーロタイマー終了時に時間を加算
-  const handlePomodoroComplete = async () => {
-    if (pomodoroTimer.state.phase === "work" && pomodoroTimer.state.timeLeft === 0 && id) {
-      // 25分の作業が完了したら、25分を記録に追加
-      await addRecord(id, WORK_DURATION);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
-  };
 
-  const WORK_DURATION = 25 * 60; // 25分
 
   const handleSetGoal = () => {
     router.push({
@@ -184,7 +213,7 @@ export default function ItemDetailScreen() {
   const handleDelete = () => {
     Alert.alert(
       "項目を削除",
-      `「${item?.name}」を削除しますか？\nすべての記録も削除されます。`,
+      `${item?.name}を削除しますか？\nこの操作は元に戻せません。`,
       [
         { text: "キャンセル", style: "cancel" },
         {
@@ -209,11 +238,27 @@ export default function ItemDetailScreen() {
     );
   }
 
+  const goalTarget = item.goal?.target;
+  const goalDeadline = item.goal?.deadline;
+  const goalStartTotal = item.goal?.startTotal ?? 0;
+  const goalProgressValue = Math.max(0, item.totalValue - goalStartTotal);
+  const goalRemaining = goalTarget ? Math.max(0, goalTarget - goalProgressValue) : 0;
+  const goalDaysRemaining = goalDeadline
+    ? calculateDaysRemaining(goalDeadline)
+    : null;
+  const goalTodayTarget =
+    goalTarget && goalDaysRemaining !== null
+      ? Math.ceil(goalRemaining / Math.max(goalDaysRemaining, 1))
+      : null;
+
+  const formatGoalValue = (value: number) =>
+    item.type === "time" ? formatTime(value) : formatCount(value);
+
   const renderGroupedRecord = ({ item: record }: { item: GroupedRecord }) => {
     const dateLabel = formatDate(record.date);
     const valueLabel = item.type === "time" ? formatTime(record.totalValue) : formatCount(record.totalValue);
     const countLabel = record.count === 1 ? "1回" : `${record.count}回`;
-    
+
     return (
       <View style={[styles.recordItem, { backgroundColor: colors.card }]}>
         <View style={styles.recordDateSection}>
@@ -241,7 +286,7 @@ export default function ItemDetailScreen() {
         },
       ]}
     >
-      {/* ヘッダー */}
+      {/* 繝倥ャ繝繝ｼ */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <IconSymbol name="arrow.left" size={24} color={colors.tint} />
@@ -259,106 +304,11 @@ export default function ItemDetailScreen() {
         </View>
       </View>
 
-      {/* メインコンテンツ */}
+      {/* 繝｡繧､繝ｳ繧ｳ繝ｳ繝・Φ繝・*/}
       <ScrollView style={styles.mainContent} showsVerticalScrollIndicator={false}>
-        {/* 累計表示 */}
-        <View style={styles.totalSection}>
-          <ThemedText style={{ color: colors.textSecondary }}>累計</ThemedText>
-          <ThemedText type="title" style={[styles.totalValue, { color: item.color }]}>
-            {item.type === "time"
-              ? formatTime(item.totalValue)
-              : formatCount(item.totalValue)}
-          </ThemedText>
-          <ThemedText style={{ color: colors.textSecondary }}>
-            今日: {item.type === "time" ? formatTime(todayValue) : formatCount(todayValue)}
-          </ThemedText>
 
-          {/* 目標達成率 */}
-          {item.goal && (
-            <View style={styles.goalSection}>
-              {item.goal.daily && (
-                <View style={styles.goalItem}>
-                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-                    日次目標
-                  </ThemedText>
-                  <View style={styles.progressBar}>
-                    <View
-                      style={[
-                        styles.progressFill,
-                        {
-                          width: `${calculateGoalProgress(
-                            todayValue,
-                            item.goal.daily
-                          )}%`,
-                          backgroundColor: item.color,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-                    {calculateGoalProgress(todayValue, item.goal.daily)}%
-                  </ThemedText>
-                </View>
-              )}
-              {item.goal.weekly && (
-                <View style={styles.goalItem}>
-                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-                    週次目標
-                  </ThemedText>
-                  <View style={styles.progressBar}>
-                    <View
-                      style={[
-                        styles.progressFill,
-                        {
-                          width: `${calculateGoalProgress(
-                            calculatePeriodTotal(records, item.id, 'weekly'),
-                            item.goal.weekly
-                          )}%`,
-                          backgroundColor: item.color,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-                    {calculateGoalProgress(
-                      calculatePeriodTotal(records, item.id, 'weekly'),
-                      item.goal.weekly
-                    )}%
-                  </ThemedText>
-                </View>
-              )}
-              {item.goal.monthly && (
-                <View style={styles.goalItem}>
-                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-                    月次目標
-                  </ThemedText>
-                  <View style={styles.progressBar}>
-                    <View
-                      style={[
-                        styles.progressFill,
-                        {
-                          width: `${calculateGoalProgress(
-                            calculatePeriodTotal(records, item.id, 'monthly'),
-                            item.goal.monthly
-                          )}%`,
-                          backgroundColor: item.color,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-                    {calculateGoalProgress(
-                      calculatePeriodTotal(records, item.id, 'monthly'),
-                      item.goal.monthly
-                    )}%
-                  </ThemedText>
-                </View>
-              )}
-            </View>
-          )}
-        </View>
 
-        {/* タイマー/カウンター */}
+        {/* 繧ｿ繧､繝槭・/繧ｫ繧ｦ繝ｳ繧ｿ繝ｼ */}
         {item.type === "time" ? (
           <View style={styles.timerSection}>
             {!showPomodoroMode ? (
@@ -409,23 +359,25 @@ export default function ItemDetailScreen() {
                     </Pressable>
                   )}
 
-                  <Pressable
-                    style={[styles.secondaryButton, { borderColor: colors.tint, borderWidth: 2 }]}
-                    onPress={() => setShowPomodoroMode(true)}
-                  >
-                    <ThemedText style={{ color: colors.tint, fontWeight: "600" }}>
-                      🍅 ポモドーロ
-                    </ThemedText>
-                  </Pressable>
+                  {!isRunning && (
+                    <Pressable
+                      style={[styles.secondaryButton, { borderColor: colors.tint, borderWidth: 2 }]}
+                      onPress={() => setShowPomodoroMode(true)}
+                    >
+                      <ThemedText style={{ color: colors.tint, fontWeight: "600" }}>
+                        ポモドーロ
+                      </ThemedText>
+                    </Pressable>
+                  )}
                 </View>
               </>
             ) : (
               <>
                 <View style={[styles.pomodoroDisplay, { backgroundColor: colors.card }]}>
                   <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-                    {pomodoroTimer.state.phase === "work" ? "💪 作業中" : "🧘 休憩中"}
+                    {pomodoroTimer.state.phase === "work" ? "作業中" : "休憩中"}
                   </ThemedText>
-                  <ThemedText style={{ fontSize: 48, fontWeight: "bold", marginVertical: 16 }}>
+                  <ThemedText style={styles.pomodoroTime}>
                     {pomodoroTimer.formatTime(pomodoroTimer.state.timeLeft)}
                   </ThemedText>
                   <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
@@ -455,7 +407,6 @@ export default function ItemDetailScreen() {
                   <Pressable
                     style={[styles.secondaryButton, { borderColor: colors.border }]}
                     onPress={() => {
-                      handlePomodoroComplete();
                       pomodoroTimer.stopPomodoro();
                       setShowPomodoroMode(false);
                     }}
@@ -502,7 +453,113 @@ export default function ItemDetailScreen() {
           </View>
         )}
 
-        {/* 記録一覧 */}
+        {/* 邏ｯ險郁｡ｨ遉ｺ */}
+        <View style={styles.totalSection}>
+          <ThemedText style={{ color: colors.textSecondary }}>合計</ThemedText>
+          <ThemedText type="title" style={[styles.totalValue, { color: item.color }]}>
+            {item.type === "time"
+              ? formatTime(item.totalValue)
+              : formatCount(item.totalValue)}
+          </ThemedText>
+          <ThemedText style={{ color: colors.textSecondary, marginBottom: Spacing.m }}>
+            今日: {item.type === "time" ? formatTime(todayValue) : formatCount(todayValue)}
+          </ThemedText>
+
+          {/* 繝ｬ繝吶Ν進捗:*/}
+          {levelInfo && (
+            <View style={styles.levelSection}>
+              <View style={styles.levelHeader}>
+                <ThemedText style={{ fontWeight: 'bold', color: item.color }}>
+                  {levelInfo.current.title}
+                </ThemedText>
+                {levelInfo.next && (
+                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                    次のランクまで {item.type === 'time'
+                      ? formatTime(levelInfo.next.threshold - item.totalValue)
+                      : formatCount(levelInfo.next.threshold - item.totalValue)}
+                  </ThemedText>
+                )}
+              </View>
+              <View style={styles.levelProgressBar}>
+                <View
+                  style={[
+                    styles.levelProgressFill,
+                    {
+                      width: `${levelInfo.progress}%`,
+                      backgroundColor: item.color
+                    }
+                  ]}
+                />
+              </View>
+              {levelInfo.next && (
+                <View style={styles.levelFooter}>
+                  <ThemedText style={{ fontSize: 10, color: colors.textSecondary }}>
+                    {Math.floor(levelInfo.progress)}%
+                  </ThemedText>
+                  <ThemedText style={{ fontSize: 10, color: colors.textSecondary }}>
+                    {levelInfo.next.title}
+                  </ThemedText>
+                </View>
+              )}
+            </View>
+          )}
+
+          {goalTarget && goalDeadline && (
+            <View style={styles.goalSection}>
+              <View style={styles.goalItem}>
+                <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                  目標: {formatGoalValue(goalTarget)}
+                </ThemedText>
+                <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                  残り: {formatGoalValue(goalRemaining)}
+                </ThemedText>
+                <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                  期限: {goalDeadline}
+                </ThemedText>
+                {goalDaysRemaining !== null && (
+                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                    残り日数: {goalDaysRemaining}日
+                  </ThemedText>
+                )}
+              </View>
+
+              <View style={styles.goalItem}>
+                <View style={styles.progressBar}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        width: `${calculateGoalProgress(
+                          goalProgressValue,
+                          goalTarget
+                        )}%`,
+                        backgroundColor: item.color,
+                      },
+                    ]}
+                  />
+                </View>
+                <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                  進捗: {calculateGoalProgress(goalProgressValue, goalTarget)}%
+                </ThemedText>
+              </View>
+
+              {goalTodayTarget !== null && (
+                <View style={styles.goalItem}>
+                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                    今日の目安: {formatGoalValue(goalTodayTarget)}
+                  </ThemedText>
+                  {goalRemaining === 0 && (
+                    <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                      目標達成済み
+                    </ThemedText>
+                  )}
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* 險倬鹸荳隕ｧ */}
         <View style={styles.recordsSection}>
           <ThemedText type="subtitle" style={{ marginBottom: Spacing.m }}>
             最近の記録
@@ -592,6 +649,11 @@ const styles = StyleSheet.create({
   timerText: {
     fontSize: 40,
     fontWeight: "bold",
+    lineHeight: 44,
+    textAlign: "center",
+    textAlignVertical: "center",
+    includeFontPadding: false,
+    fontVariant: ["tabular-nums"],
   },
   timerButtons: {
     width: "100%",
@@ -622,6 +684,16 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.card,
     alignItems: "center",
     marginBottom: Spacing.l,
+  },
+  pomodoroTime: {
+    fontSize: 48,
+    fontWeight: "bold",
+    marginVertical: 16,
+    lineHeight: 56,
+    textAlign: "center",
+    textAlignVertical: "center",
+    includeFontPadding: false,
+    fontVariant: ["tabular-nums"],
   },
   counterSection: {
     alignItems: "center",
@@ -672,4 +744,44 @@ const styles = StyleSheet.create({
   recordDateSection: {
     flex: 1,
   },
+  levelSection: {
+    marginTop: Spacing.s,
+    backgroundColor: "rgba(0,0,0,0.03)",
+    padding: Spacing.m,
+    borderRadius: BorderRadius.card,
+  },
+  levelHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.s,
+  },
+  levelProgressBar: {
+    height: 6,
+    backgroundColor: "rgba(0,0,0,0.05)",
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  levelProgressFill: {
+    height: "100%",
+    borderRadius: 3,
+  },
+  levelFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 4,
+  },
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
