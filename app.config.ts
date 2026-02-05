@@ -12,11 +12,11 @@ const schemeFromBundleId = `manus${timestamp}`;
 
 const env = {
   // App branding - update these values directly (do not use env vars)
-  appName: '積み上げ',
-  appSlug: 'tsumage-app',
+  appName: "積み上げ",
+  appSlug: "tsumage-app",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
-  logoUrl: 'https://files.manuscdn.com/user_upload_by_module/session_file/310519663260772597/BJXdohEVphTpxTuG.png',
+  logoUrl: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663260772597/BJXdohEVphTpxTuG.png",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
@@ -85,6 +85,11 @@ const config: ExpoConfig = {
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
+  },
+  extra: {
+    eas: {
+      projectId: "9a46088f-88a3-4fa5-a31f-8d55729af0fc",
+    },
   },
 };
 
