@@ -40,6 +40,26 @@ const MAPPING = {
   "flame.fill": "local-fire-department",
   "square.and.arrow.up": "share",
   "quote.bubble": "format-quote",
+  // 新規追加アイコン
+  "book.fill": "menu-book",
+  "desktopcomputer": "desktop-mac",
+  "briefcase.fill": "work",
+  "figure.run": "directions-run",
+  "figure.walk": "directions-walk",
+  "bicycle": "directions-bike",
+  "dumbbell.fill": "fitness-center",
+  "bed.double.fill": "hotel",
+  "cart.fill": "shopping-cart",
+  "car.fill": "directions-car",
+  "pawprint.fill": "pets",
+  "gamecontroller.fill": "videogame-asset",
+  "music.note": "music-note",
+  "camera.fill": "camera-alt",
+  "paintbrush.fill": "brush",
+  "banknote.fill": "attach-money",
+  "leaf.fill": "eco",
+  "sun.max.fill": "wb-sunny",
+  "moon.fill": "nightlight-round",
 } as Partial<IconMapping>;
 
 /**

@@ -1,6 +1,6 @@
 ﻿import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState, useEffect } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 
@@ -11,6 +11,7 @@ import { TimeInput } from "@/components/ui/time-input";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
+import { COLOR_OPTIONS, ICON_OPTIONS } from "@/types/stack";
 import { Goal, calculateDaysRemaining, formatCount, formatTime, getTodayString, toDateString } from "@/types/stack";
 
 export default function SetGoalModal() {
@@ -18,11 +19,14 @@ export default function SetGoalModal() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
-  const { items, updateItem } = useStackStorage();
+  const { items, updateItem, deleteItem } = useStackStorage();
 
   const item = useMemo(() => items.find((i) => i.id === id), [items, id]);
 
   // State
+  const [name, setName] = useState(item?.name ?? "");
+  const [selectedIcon, setSelectedIcon] = useState(item?.icon ?? ICON_OPTIONS[0].name);
+  const [selectedColor, setSelectedColor] = useState<string>(item?.color ?? COLOR_OPTIONS[0]);
   const [target, setTarget] = useState(item?.goal?.target?.toString() || "");
   const [deadline, setDeadline] = useState(item?.goal?.deadline || "");
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -31,6 +35,9 @@ export default function SetGoalModal() {
   // Sync saved goal when reopening
   useEffect(() => {
     if (!item) return;
+    setName(item.name);
+    setSelectedIcon(item.icon);
+    setSelectedColor(item.color);
     setTarget(item.goal?.target?.toString() || "");
     setDeadline(item.goal?.deadline || "");
   }, [item]);
@@ -72,17 +79,47 @@ export default function SetGoalModal() {
   const handleSave = async () => {
     if (!id || !item) return;
 
-    if (!target || !deadline) return; // Validation
-
-    const goal: Goal = {
-      target: parseInt(target, 10),
-      deadline: deadline,
-      startTotal: item.totalValue,
-      startDate: getTodayString(),
+    const updates: Partial<typeof item> = {
+      name: name.trim() ? name.trim() : item.name,
+      icon: selectedIcon,
+      color: selectedColor,
     };
 
-    await updateItem(id, { goal });
+    if (target && deadline) {
+      const goal: Goal = {
+        target: parseInt(target, 10),
+        deadline: deadline,
+        startTotal: item.totalValue,
+        startDate: getTodayString(),
+      };
+      updates.goal = goal;
+    }
+
+    await updateItem(id, updates);
     router.back();
+  };
+
+  const handleDelete = () => {
+    if (!id || !item) return;
+    Alert.alert(
+      "項目を削除",
+      `${item.name}を削除しますか？\nこの操作は元に戻せません。`,
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "削除",
+          style: "destructive",
+          onPress: () => {
+            router.replace("/(tabs)");
+            setTimeout(() => {
+              deleteItem(id).catch((error) => {
+                console.error("Failed to delete item:", error);
+              });
+            }, 0);
+          },
+        },
+      ]
+    );
   };
 
   const handleCancel = () => {
@@ -123,13 +160,6 @@ export default function SetGoalModal() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={[styles.itemInfo, { backgroundColor: colors.card }]}>
-          <ThemedText type="defaultSemiBold">{item.name}</ThemedText>
-          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-            現在の累計: {item.type === "time" ? formatTime(currentTotal) : formatCount(currentTotal)}
-          </ThemedText>
-        </View>
-
         {/* Total Target Section */}
         <View style={styles.section}>
           <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
@@ -230,6 +260,106 @@ export default function SetGoalModal() {
           </View>
         )}
 
+        <View style={[styles.itemInfo, { backgroundColor: colors.card }]}>
+          <ThemedText type="defaultSemiBold">{item.name}</ThemedText>
+          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+            現在の累計: {item.type === "time" ? formatTime(currentTotal) : formatCount(currentTotal)}
+          </ThemedText>
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
+            項目設定
+          </ThemedText>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                backgroundColor: colors.card,
+                color: colors.text,
+                borderColor: colors.border,
+              },
+            ]}
+            placeholder="項目名"
+            placeholderTextColor={colors.textDisabled}
+            value={name}
+            onChangeText={setName}
+          />
+
+          <View style={{ marginTop: Spacing.m }}>
+            <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
+              アイコン
+            </ThemedText>
+            <View style={styles.iconGrid}>
+              {ICON_OPTIONS.map((icon) => (
+                <Pressable
+                  key={icon.name}
+                  style={[
+                    styles.iconOption,
+                    {
+                      backgroundColor:
+                        selectedIcon === icon.name
+                          ? selectedColor + "20"
+                          : colors.card,
+                      borderColor:
+                        selectedIcon === icon.name
+                          ? selectedColor
+                          : colors.border,
+                    },
+                  ]}
+                  onPress={() => setSelectedIcon(icon.name)}
+                >
+                  <IconSymbol
+                    name={icon.name as any}
+                    size={28}
+                    color={selectedIcon === icon.name ? selectedColor : colors.text}
+                  />
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          <View style={{ marginTop: Spacing.m }}>
+            <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
+              カラー
+            </ThemedText>
+            <View style={styles.colorGrid}>
+              {COLOR_OPTIONS.map((color) => (
+                <Pressable
+                  key={color}
+                  style={[
+                    styles.colorOption,
+                    {
+                      backgroundColor: color,
+                      borderWidth: selectedColor === color ? 3 : 0,
+                      borderColor: colors.text,
+                    },
+                  ]}
+                  onPress={() => setSelectedColor(color)}
+                >
+                  {selectedColor === color && (
+                    <IconSymbol name="checkmark.circle.fill" size={20} color="#fff" />
+                  )}
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText type="defaultSemiBold" style={[styles.sectionTitle, { color: colors.error }]}>
+            項目を削除
+          </ThemedText>
+          <Pressable
+            onPress={handleDelete}
+            style={[styles.deleteButton, { borderColor: colors.error }]}
+          >
+            <ThemedText style={{ color: colors.error, fontWeight: "600" }}>
+              この項目を削除
+            </ThemedText>
+          </Pressable>
+        </View>
+
         <View style={{ height: 100 }} />
       </ScrollView>
     </ThemedView>
@@ -285,12 +415,43 @@ const styles = StyleSheet.create({
     fontSize: 16,
     minHeight: 56,
   },
+  iconGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.s,
+  },
+  iconOption: {
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.button,
+    borderWidth: 2,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  colorGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.s,
+  },
+  colorOption: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   feedbackContainer: {
     padding: Spacing.m,
     borderRadius: BorderRadius.card,
     borderWidth: 1,
     marginTop: Spacing.m,
-  }
+  },
+  deleteButton: {
+    paddingVertical: Spacing.m,
+    alignItems: "center",
+    borderRadius: BorderRadius.button,
+    borderWidth: 1,
+  },
 });
 
 

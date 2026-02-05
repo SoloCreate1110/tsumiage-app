@@ -20,6 +20,8 @@ import { Platform } from "react-native";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AppState } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -31,6 +33,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { TimeInput } from "@/components/ui/time-input";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
@@ -65,7 +68,6 @@ export default function ItemDetailScreen() {
     records,
     addRecord,
     updateItem,
-    deleteItem,
     getRecordsByItem,
     getTodayValue,
     getDailyNote,
@@ -133,6 +135,9 @@ export default function ItemDetailScreen() {
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderTime, setReminderTime] = useState("20:00");
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [adjustSeconds, setAdjustSeconds] = useState(0);
+  const [adjustCount, setAdjustCount] = useState(1);
+  const [adjustDate, setAdjustDate] = useState<string | null>(null);
 
   useEffect(() => {
     if (!item || !id) return;
@@ -152,6 +157,8 @@ export default function ItemDetailScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showPomodoroMode, setShowPomodoroMode] = useState(false);
   const [autoSwitchBreak, setAutoSwitchBreak] = useState(true);
+  const timerStartRef = useRef<number | null>(null);
+  const TIMER_STATE_KEY = id ? `timer_state_${id}` : null;
 
   const { playSuccess } = useSound(); // Moved here
 
@@ -279,6 +286,12 @@ export default function ItemDetailScreen() {
   }));
 
   // 繧ｿ繧､繝槭・蜃ｦ逅・
+  const syncElapsed = useCallback(() => {
+    if (!timerStartRef.current) return;
+    const diff = Math.max(0, Math.floor((Date.now() - timerStartRef.current) / 1000));
+    setElapsedSeconds(diff);
+  }, []);
+
   useEffect(() => {
     if (!isRunning) {
       if (timerRef.current) {
@@ -288,8 +301,9 @@ export default function ItemDetailScreen() {
       return;
     }
 
+    syncElapsed();
     timerRef.current = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
+      syncElapsed();
     }, 1000);
 
     return () => {
@@ -297,25 +311,71 @@ export default function ItemDetailScreen() {
         clearInterval(timerRef.current);
       }
     };
-  }, [isRunning]);
+  }, [isRunning, syncElapsed]);
 
-  const handleStartTimer = () => {
+  useEffect(() => {
+    if (!TIMER_STATE_KEY || !id) return;
+    const loadTimerState = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(TIMER_STATE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as { startAt: number };
+        if (parsed?.startAt) {
+          timerStartRef.current = parsed.startAt;
+          setIsRunning(true);
+          syncElapsed();
+        }
+      } catch (error) {
+        console.error("Failed to load timer state:", error);
+      }
+    };
+    loadTimerState();
+  }, [TIMER_STATE_KEY, id, syncElapsed]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active" && isRunning) {
+        syncElapsed();
+      }
+    });
+    return () => sub.remove();
+  }, [isRunning, syncElapsed]);
+
+  const handleStartTimer = async () => {
+    const now = Date.now();
+    timerStartRef.current = now;
     setIsRunning(true);
+    if (TIMER_STATE_KEY) {
+      await AsyncStorage.setItem(TIMER_STATE_KEY, JSON.stringify({ startAt: now }));
+    }
   };
 
   const handleStopTimer = async () => {
     setIsRunning(false);
-    if (elapsedSeconds > 0 && id) {
+    if (id) {
+      const now = Date.now();
+      const startedAt = timerStartRef.current;
+      const elapsed = startedAt ? Math.floor((now - startedAt) / 1000) : elapsedSeconds;
       const note = sessionNote.trim() ? sessionNote.trim() : undefined;
-      await addRecord(id, elapsedSeconds, note);
+      if (elapsed > 0) {
+        await addRecord(id, elapsed, note);
+      }
+      timerStartRef.current = null;
+      setElapsedSeconds(0);
+      if (TIMER_STATE_KEY) {
+        await AsyncStorage.removeItem(TIMER_STATE_KEY);
+      }
       if (note) setSessionNote("");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setElapsedSeconds(0);
     }
   };
 
-  const handleResetTimer = () => {
+  const handleResetTimer = async () => {
     setElapsedSeconds(0);
+    timerStartRef.current = null;
+    if (TIMER_STATE_KEY) {
+      await AsyncStorage.removeItem(TIMER_STATE_KEY);
+    }
   };
 
   const handleAddCount = async () => {
@@ -328,6 +388,26 @@ export default function ItemDetailScreen() {
     }
   };
 
+  const handleAdjust = async (direction: "plus" | "minus") => {
+    if (!id || !item || !adjustDate) return;
+    const isTime = item.type === "time";
+    const baseValue = isTime ? adjustSeconds : adjustCount;
+    if (!baseValue || baseValue <= 0) return;
+    let delta = direction === "minus" ? -baseValue : baseValue;
+    const dayTotal = groupedRecords.find((g) => g.date === adjustDate)?.totalValue ?? 0;
+    if (dayTotal + delta < 0) {
+      delta = -dayTotal;
+    }
+    if (delta === 0) return;
+    const noteLabel = isTime
+      ? `調整 ${delta > 0 ? "+" : "-"}${formatTime(Math.abs(delta))}`
+      : `調整 ${delta > 0 ? "+" : "-"}${formatCount(Math.abs(delta))}`;
+    await addRecord(id, delta, noteLabel, adjustDate);
+    setAdjustSeconds(0);
+    setAdjustCount(1);
+    setAdjustDate(null);
+  };
+
 
 
   const handleSetGoal = () => {
@@ -337,25 +417,28 @@ export default function ItemDetailScreen() {
     });
   };
 
-  const handleDelete = () => {
-    Alert.alert(
-      "項目を削除",
-      `${item?.name}を削除しますか？\nこの操作は元に戻せません。`,
-      [
-        { text: "キャンセル", style: "cancel" },
-        {
-          text: "削除",
-          style: "destructive",
-          onPress: async () => {
-            if (id) {
-              await deleteItem(id);
-              router.back();
-            }
-          },
-        },
-      ]
+  const scrollRef = useRef<ScrollView | null>(null);
+  const adjustRef = useRef<View | null>(null);
+
+  const scrollToAdjust = useCallback(() => {
+    if (!scrollRef.current || !adjustRef.current) return;
+    adjustRef.current.measureLayout(
+      // @ts-ignore
+      scrollRef.current,
+      (_x, y) => {
+        scrollRef.current?.scrollTo({ y: Math.max(0, y - 24), animated: true });
+      },
+      () => {}
     );
-  };
+  }, []);
+
+  useEffect(() => {
+    if (adjustDate) {
+      setTimeout(() => {
+        scrollToAdjust();
+      }, 50);
+    }
+  }, [adjustDate, scrollToAdjust]);
 
   if (loading || !item) {
     return (
@@ -387,7 +470,19 @@ export default function ItemDetailScreen() {
     const countLabel = record.count === 1 ? "1回" : `${record.count}回`;
 
     return (
-      <View style={[styles.recordItem, { backgroundColor: colors.card }]}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.recordItem,
+          {
+            backgroundColor:
+              adjustDate === record.date ? item.color + "1A" : colors.card,
+            borderColor:
+              adjustDate === record.date ? item.color : "transparent",
+            opacity: pressed ? 0.8 : 1,
+          },
+        ]}
+        onPress={() => setAdjustDate(record.date)}
+      >
         <View style={styles.recordDateSection}>
           <ThemedText style={{ color: colors.textSecondary, fontSize: 14 }}>
             {dateLabel}
@@ -399,7 +494,7 @@ export default function ItemDetailScreen() {
         <ThemedText type="defaultSemiBold" style={{ fontSize: 16 }}>
           {valueLabel}
         </ThemedText>
-      </View>
+      </Pressable>
     );
   };
 
@@ -425,14 +520,11 @@ export default function ItemDetailScreen() {
           <Pressable onPress={handleSetGoal} style={styles.iconButton}>
             <IconSymbol name="gearshape.fill" size={20} color={colors.tint} />
           </Pressable>
-          <Pressable onPress={handleDelete} style={styles.iconButton}>
-            <IconSymbol name="trash.fill" size={20} color={colors.error} />
-          </Pressable>
         </View>
       </View>
 
       {/* 繝｡繧､繝ｳ繧ｳ繝ｳ繝・Φ繝・*/}
-      <ScrollView style={styles.mainContent} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} style={styles.mainContent} showsVerticalScrollIndicator={false}>
 
 
         {/* 繧ｿ繧､繝槭・/繧ｫ繧ｦ繝ｳ繧ｿ繝ｼ */}
@@ -852,6 +944,52 @@ export default function ItemDetailScreen() {
               記録がありません
             </ThemedText>
           )}
+
+          {adjustDate && (
+            <View ref={adjustRef} style={[styles.adjustPanel, { backgroundColor: colors.card }]}>
+              <View style={styles.adjustHeader}>
+                <ThemedText type="defaultSemiBold">
+                  {formatDate(adjustDate)} の調整
+                </ThemedText>
+                <Pressable onPress={() => setAdjustDate(null)}>
+                  <IconSymbol name="xmark" size={16} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+              {item.type === "time" ? (
+                <TimeInput value={adjustSeconds} onChange={setAdjustSeconds} />
+              ) : (
+                <View style={styles.adjustCountRow}>
+                  <TextInput
+                    style={[
+                      styles.adjustCountInput,
+                      { backgroundColor: colors.background, color: colors.text, borderColor: colors.border },
+                    ]}
+                    value={adjustCount.toString()}
+                    onChangeText={(text) => setAdjustCount(Math.max(1, parseInt(text || "0", 10)))}
+                    keyboardType="numeric"
+                  />
+                  <ThemedText style={{ color: colors.textSecondary }}>回</ThemedText>
+                </View>
+              )}
+              <View style={styles.adjustButtons}>
+                <Pressable
+                  style={[styles.adjustActionButton, { backgroundColor: colors.tint }]}
+                  onPress={() => handleAdjust("plus")}
+                >
+                  <ThemedText style={{ color: "#fff", fontWeight: "600" }}>増やす</ThemedText>
+                </Pressable>
+                <Pressable
+                  style={[styles.adjustActionButton, { backgroundColor: colors.error }]}
+                  onPress={() => handleAdjust("minus")}
+                >
+                  <ThemedText style={{ color: "#fff", fontWeight: "600" }}>減らす</ThemedText>
+                </Pressable>
+              </View>
+              <ThemedText style={styles.adjustHint}>
+                ※ この日の合計として調整されます
+              </ThemedText>
+            </View>
+          )}
         </View>
       </ScrollView>
     </ThemedView>
@@ -922,6 +1060,48 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.card,
     paddingHorizontal: Spacing.m,
     paddingVertical: Spacing.s,
+  },
+  adjustPanel: {
+    marginTop: Spacing.m,
+    padding: Spacing.m,
+    borderRadius: BorderRadius.card,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.06)",
+  },
+  adjustHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.s,
+  },
+  adjustButtons: {
+    flexDirection: "row",
+    gap: Spacing.s,
+    marginTop: Spacing.s,
+  },
+  adjustActionButton: {
+    flex: 1,
+    paddingVertical: Spacing.m,
+    borderRadius: BorderRadius.button,
+    alignItems: "center",
+  },
+  adjustHint: {
+    marginTop: Spacing.xs,
+    color: "#888",
+    fontSize: 11,
+  },
+  adjustCountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.s,
+  },
+  adjustCountInput: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.card,
+    padding: Spacing.m,
+    minWidth: 80,
+    textAlign: "center",
+    fontSize: 16,
   },
   notesSection: {
     marginBottom: Spacing.l,
@@ -1067,6 +1247,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.m,
     borderRadius: BorderRadius.card,
     marginBottom: Spacing.s,
+    borderWidth: 1,
   },
   recordDateSection: {
     flex: 1,

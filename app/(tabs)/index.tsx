@@ -5,7 +5,8 @@
 import { router, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useCallback, useMemo, useState, useEffect } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { AppState, Pressable, StyleSheet, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -25,8 +26,7 @@ export default function HomeScreen() {
   const colors = Colors[colorScheme ?? "light"];
   const { items, loading, getTodayValue, calculateStreak, reorderItems, reload } = useStackStorage();
 
-  const { ensureTodayQuote, getTodayQuote } = useQuoteHistory();
-  const [quote, setQuote] = useState(getTodayQuote());
+  const { ensureTodayQuote, todayQuote } = useQuoteHistory();
 
   // getTodayValue縺ｮ繝｡繝｢蛹也沿繧剃ｽ懈・・医ヱ繝輔か繝ｼ繝槭Φ繧ｹ譛驕ｩ蛹厄ｼ・
   const memoizedGetTodayValue = useCallback(
@@ -40,14 +40,12 @@ export default function HomeScreen() {
       console.log('[HomeScreen] Screen focused, reloading data');
       reload();
       ensureTodayQuote();
-      setQuote(getTodayQuote());
-    }, [reload, ensureTodayQuote, getTodayQuote])
+    }, [reload, ensureTodayQuote])
   );
 
   useEffect(() => {
     ensureTodayQuote();
-    setQuote(getTodayQuote());
-  }, [ensureTodayQuote, getTodayQuote]);
+  }, [ensureTodayQuote]);
 
   const handleAddItem = useCallback(() => {
     router.push("/add-item");
@@ -58,15 +56,39 @@ export default function HomeScreen() {
   }, []);
 
   const streak = calculateStreak();
+  const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
 
+  const refreshRunning = useCallback(async () => {
+    if (items.length === 0) {
+      setRunningIds(new Set());
+      return;
+    }
+    const keys = items.map((i) => `timer_state_${i.id}`);
+    try {
+      const pairs = await AsyncStorage.multiGet(keys);
+      const next = new Set<string>();
+      pairs.forEach(([key, value]) => {
+        if (!value) return;
+        const id = key.replace("timer_state_", "");
+        const parsed = JSON.parse(value) as { startAt?: number };
+        if (parsed?.startAt) next.add(id);
+      });
+      setRunningIds(next);
+    } catch (error) {
+      console.error("Failed to load running timers:", error);
+    }
+  }, [items]);
 
-  if (loading) {
-    return (
-      <ThemedView style={[styles.container, styles.center]}>
-        <ThemedText>読み込み中...</ThemedText>
-      </ThemedView>
-    );
-  }
+  useEffect(() => {
+    refreshRunning();
+  }, [refreshRunning]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") refreshRunning();
+    });
+    return () => sub.remove();
+  }, [refreshRunning]);
 
   const renderItem = useCallback(
     ({ item, drag, isActive }: RenderItemParams<StackItem>) => (
@@ -79,10 +101,19 @@ export default function HomeScreen() {
           drag();
         }}
         isActive={isActive}
+        isRunning={runningIds.has(item.id)}
       />
     ),
-    [memoizedGetTodayValue, handleItemPress]
+    [memoizedGetTodayValue, handleItemPress, runningIds]
   );
+
+  if (loading) {
+    return (
+      <ThemedView style={[styles.container, styles.center]}>
+        <ThemedText>読み込み中...</ThemedText>
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView
@@ -138,17 +169,17 @@ export default function HomeScreen() {
           <View style={styles.quoteHeader}>
             <IconSymbol name="quote.bubble" size={20} color={colors.textSecondary} />
             <ThemedText style={styles.quoteNo}>
-              NO.{quote.no.toString().padStart(3, "0")}
+              NO.{todayQuote.no.toString().padStart(3, "0")}
             </ThemedText>
             <View style={{ flex: 1 }} />
             <ThemedText style={styles.quoteHint}>タップで収集済み名言リストへ</ThemedText>
             <IconSymbol name="chevron.right" size={16} color={colors.textDisabled} />
           </View>
           <ThemedText style={[styles.quoteText, { color: colors.text }]}>
-            {quote.text}
+            {todayQuote.text}
           </ThemedText>
           <ThemedText style={[styles.quoteAuthor, { color: colors.textSecondary }]}>
-            ・{quote.author}
+            ・{todayQuote.author}
           </ThemedText>
         </View>
       </Pressable>

@@ -199,15 +199,16 @@ function useStackStorageInternal() {
 
   // 遨阪∩荳翫￡險倬鹸繧定ｿｽ蜉
   const addRecord = useCallback(
-    async (itemId: string, value: number, note?: string) => {
+    async (itemId: string, value: number, note?: string, dateOverride?: string) => {
       const now = new Date().toISOString();
       const today = getTodayString();
+      const recordDate = dateOverride ? dateOverride.slice(0, 10) : today;
 
       const newRecord: StackRecord = {
         id: generateId(),
         itemId,
         value,
-        date: today,
+        date: recordDate,
         createdAt: now,
         note: note?.trim() ? note.trim() : undefined,
       };

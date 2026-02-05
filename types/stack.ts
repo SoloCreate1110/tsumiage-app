@@ -55,12 +55,37 @@ export interface DailyNote {
 
 // Icon options
 export const ICON_OPTIONS = [
+  // 基本
   { name: "clock.fill", label: "時間" },
   { name: "number", label: "回数" },
   { name: "checkmark.circle.fill", label: "チェック" },
   { name: "pencil", label: "メモ" },
+  // 学習・仕事
+  { name: "book.fill", label: "読書" },
+  { name: "desktopcomputer", label: "PC" },
+  { name: "briefcase.fill", label: "仕事" },
+  // 健康・運動
+  { name: "figure.run", label: "ランニング" },
+  { name: "figure.walk", label: "ウォーキング" },
+  { name: "bicycle", label: "自転車" },
+  { name: "dumbbell.fill", label: "筋トレ" },
+  { name: "bed.double.fill", label: "睡眠" },
+  // 生活
   { name: "house.fill", label: "家" },
-  { name: "chart.bar.fill", label: "グラフ" },
+  { name: "cart.fill", label: "買い物" },
+  { name: "car.fill", label: "運転" },
+  { name: "pawprint.fill", label: "ペット" },
+  // 趣味
+  { name: "gamecontroller.fill", label: "ゲーム" },
+  { name: "music.note", label: "音楽" },
+  { name: "camera.fill", label: "カメラ" },
+  { name: "paintbrush.fill", label: "アート" },
+  // お金
+  { name: "banknote.fill", label: "貯金" },
+  { name: "chart.bar.fill", label: "投資" },
+  // 自然
+  { name: "leaf.fill", label: "自然" },
+  { name: "flame.fill", label: "情熱" },
 ] as const;
 
 // Color options
