@@ -129,6 +129,14 @@ export default function CalendarScreen() {
     }
   };
 
+  const remainingWeeks = useMemo(() => {
+    const today = getTodayDate();
+    const endOfYear = new Date(today.getFullYear(), 11, 31, 23, 59, 59, 999);
+    const diffMs = endOfYear.getTime() - today.getTime();
+    const weeks = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24 * 7)));
+    return weeks;
+  }, []);
+
   if (loading) {
     return (
       <ThemedView style={[styles.container, styles.center]}>
@@ -218,6 +226,9 @@ export default function CalendarScreen() {
           <ThemedText style={styles.cutoffNote}>
             ※ 日付は朝6時に切り替わります
           </ThemedText>
+          <ThemedText style={styles.remainingWeeks}>
+            今年の残り {remainingWeeks}週
+          </ThemedText>
 
           <View style={styles.statsContainer}>
             <ThemedText type="subtitle" style={{ marginBottom: Spacing.m }}>週間サマリー</ThemedText>
@@ -297,6 +308,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.m,
     marginBottom: Spacing.l,
     textAlign: "right",
+  },
+  remainingWeeks: {
+    fontSize: 12,
+    color: "#666",
+    paddingHorizontal: Spacing.m,
+    marginBottom: Spacing.l,
+    textAlign: "right",
+    fontWeight: "600",
   },
   legendCell: {
     width: 12,

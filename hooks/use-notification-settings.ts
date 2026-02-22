@@ -15,8 +15,7 @@ const DEFAULT_SETTINGS: NotificationSettings = {
   time: "20:00",
 };
 
-const isExpoGo =
-  Constants.appOwnership === "expo" || Constants.executionEnvironment === "storeClient";
+const isExpoGo = Constants.executionEnvironment === "storeClient";
 
 // 通知の表示方法を設定
 Notifications.setNotificationHandler({

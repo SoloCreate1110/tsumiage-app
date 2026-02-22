@@ -11,6 +11,7 @@ import { TimeInput } from "@/components/ui/time-input";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
+import { useSound } from "@/hooks/use-sound";
 import { COLOR_OPTIONS, ICON_OPTIONS } from "@/types/stack";
 import { Goal, calculateDaysRemaining, formatCount, formatTime, getTodayString, toDateString } from "@/types/stack";
 
@@ -20,6 +21,7 @@ export default function SetGoalModal() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const { items, updateItem, deleteItem } = useStackStorage();
+  const { playSuccess, playDelete, playClick } = useSound();
 
   const item = useMemo(() => items.find((i) => i.id === id), [items, id]);
 
@@ -96,6 +98,7 @@ export default function SetGoalModal() {
     }
 
     await updateItem(id, updates);
+    await playSuccess();
     router.back();
   };
 
@@ -110,6 +113,7 @@ export default function SetGoalModal() {
           text: "削除",
           style: "destructive",
           onPress: () => {
+            playDelete();
             router.replace("/(tabs)");
             setTimeout(() => {
               deleteItem(id).catch((error) => {
@@ -123,6 +127,7 @@ export default function SetGoalModal() {
   };
 
   const handleCancel = () => {
+    playClick();
     router.back();
   };
 

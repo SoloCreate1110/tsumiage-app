@@ -77,8 +77,7 @@ export default function ItemDetailScreen() {
   } = useStackStorage();
 
   const item = useMemo(() => items.find((i) => i.id === id), [items, id]);
-  const isExpoGo =
-    Constants.appOwnership === "expo" || Constants.executionEnvironment === "storeClient";
+  const isExpoGo = Constants.executionEnvironment === "storeClient";
 
   useFocusEffect(
     useCallback(() => {
@@ -160,7 +159,7 @@ export default function ItemDetailScreen() {
   const timerStartRef = useRef<number | null>(null);
   const TIMER_STATE_KEY = id ? `timer_state_${id}` : null;
 
-  const { playSuccess } = useSound(); // Moved here
+  const { playSuccess, playStart, playStop, playClick } = useSound(); // Moved here
 
   const cancelItemReminder = useCallback(
     async (itemId: string) => {
@@ -345,6 +344,7 @@ export default function ItemDetailScreen() {
     const now = Date.now();
     timerStartRef.current = now;
     setIsRunning(true);
+    playStart();
     if (TIMER_STATE_KEY) {
       await AsyncStorage.setItem(TIMER_STATE_KEY, JSON.stringify({ startAt: now }));
     }
@@ -367,6 +367,7 @@ export default function ItemDetailScreen() {
       }
       if (note) setSessionNote("");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      playStop();
     }
   };
 
@@ -381,6 +382,7 @@ export default function ItemDetailScreen() {
   const handleAddCount = async () => {
     if (id) {
       await addRecord(id, countValue);
+      playClick();
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       scale.value = withSpring(1.2, {}, () => {
         scale.value = withSpring(1);

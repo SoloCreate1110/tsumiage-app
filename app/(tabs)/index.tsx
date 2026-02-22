@@ -19,14 +19,16 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
 import { getTodayString, StackItem } from "@/types/stack";
 import { useQuoteHistory } from "@/hooks/use-quote-history";
+import { useSound } from "@/hooks/use-sound";
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const { items, loading, getTodayValue, calculateStreak, reorderItems, reload } = useStackStorage();
+  const { playClick } = useSound();
 
-  const { ensureTodayQuote, todayQuote } = useQuoteHistory();
+  const { ensureTodayQuote, todayQuote, initialized } = useQuoteHistory();
 
   // getTodayValue縺ｮ繝｡繝｢蛹也沿繧剃ｽ懈・・医ヱ繝輔か繝ｼ繝槭Φ繧ｹ譛驕ｩ蛹厄ｼ・
   const memoizedGetTodayValue = useCallback(
@@ -39,17 +41,22 @@ export default function HomeScreen() {
     useCallback(() => {
       console.log('[HomeScreen] Screen focused, reloading data');
       reload();
-      ensureTodayQuote();
-    }, [reload, ensureTodayQuote])
+      if (initialized) {
+        ensureTodayQuote();
+      }
+    }, [reload, ensureTodayQuote, initialized])
   );
 
   useEffect(() => {
-    ensureTodayQuote();
-  }, [ensureTodayQuote]);
+    if (initialized) {
+      ensureTodayQuote();
+    }
+  }, [ensureTodayQuote, initialized]);
 
   const handleAddItem = useCallback(() => {
+    playClick();
     router.push("/add-item");
-  }, []);
+  }, [playClick]);
 
   const handleItemPress = useCallback((id: string) => {
     router.push(`/item/${id}`);

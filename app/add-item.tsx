@@ -19,6 +19,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
+import { useSound } from "@/hooks/use-sound";
 import { COLOR_OPTIONS, ICON_OPTIONS, StackType } from "@/types/stack";
 
 export default function AddItemModal() {
@@ -26,6 +27,7 @@ export default function AddItemModal() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const { addItem } = useStackStorage();
+  const { playSuccess, playClick } = useSound();
 
   const [name, setName] = useState("");
   const [type, setType] = useState<StackType>("time");
@@ -36,10 +38,12 @@ export default function AddItemModal() {
     if (!name.trim()) return;
 
     await addItem(name.trim(), type, selectedIcon, selectedColor);
+    await playSuccess();
     router.back();
   };
 
   const handleCancel = () => {
+    playClick();
     router.back();
   };
 

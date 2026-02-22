@@ -9,12 +9,14 @@ import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
 import { useNotificationSettings } from "@/hooks/use-notification-settings";
+import { useSound } from "@/hooks/use-sound";
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const { items, records, reload } = useStackStorage();
+  const { playToggle } = useSound();
   const {
     settings: notificationSettings,
     enableNotification,
@@ -24,6 +26,7 @@ export default function SettingsScreen() {
   const notificationUnsupported = permissionStatus === "unsupported";
 
   const handleToggleNotification = async (value: boolean) => {
+    playToggle();
     if (value) {
       const success = await enableNotification("20:00");
       if (!success) {
