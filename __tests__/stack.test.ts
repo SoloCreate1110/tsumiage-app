@@ -1,8 +1,4 @@
-/**
- * 積み上げアプリのユニットテスト
- */
-
-import { describe, it, expect } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import {
   formatTime,
   formatTimeDetailed,
@@ -13,27 +9,27 @@ import {
 } from "../types/stack";
 
 describe("formatTime", () => {
-  it("秒のみの場合は秒で表示", () => {
-    expect(formatTime(30)).toBe("30秒");
-    expect(formatTime(0)).toBe("0秒");
+  it("formats seconds only", () => {
+    expect(formatTime(30)).toBe("30\u79d2");
+    expect(formatTime(0)).toBe("0\u79d2");
   });
 
-  it("分がある場合は分秒で表示", () => {
-    expect(formatTime(60)).toBe("1分0秒");
-    expect(formatTime(90)).toBe("1分30秒");
-    expect(formatTime(300)).toBe("5分0秒");
+  it("formats minutes", () => {
+    expect(formatTime(60)).toBe("1\u52060\u79d2");
+    expect(formatTime(90)).toBe("1\u520630\u79d2");
+    expect(formatTime(300)).toBe("5\u52060\u79d2");
   });
 
-  it("時間がある場合は時間分で表示", () => {
-    expect(formatTime(3600)).toBe("1時間0分");
-    expect(formatTime(3660)).toBe("1時間1分");
-    expect(formatTime(7200)).toBe("2時間0分");
-    expect(formatTime(5400)).toBe("1時間30分");
+  it("formats hours and minutes", () => {
+    expect(formatTime(3600)).toBe("1\u6642\u95930\u5206");
+    expect(formatTime(3660)).toBe("1\u6642\u95931\u5206");
+    expect(formatTime(7200)).toBe("2\u6642\u95930\u5206");
+    expect(formatTime(5400)).toBe("1\u6642\u959330\u5206");
   });
 });
 
 describe("formatTimeDetailed", () => {
-  it("HH:MM:SS形式で表示", () => {
+  it("formats as HH:MM:SS", () => {
     expect(formatTimeDetailed(0)).toBe("00:00:00");
     expect(formatTimeDetailed(30)).toBe("00:00:30");
     expect(formatTimeDetailed(90)).toBe("00:01:30");
@@ -43,25 +39,25 @@ describe("formatTimeDetailed", () => {
 });
 
 describe("formatCount", () => {
-  it("回数を正しくフォーマット", () => {
-    expect(formatCount(0)).toBe("0回");
-    expect(formatCount(1)).toBe("1回");
-    expect(formatCount(100)).toBe("100回");
+  it("formats count with unit", () => {
+    expect(formatCount(0)).toBe("0\u56de");
+    expect(formatCount(1)).toBe("1\u56de");
+    expect(formatCount(100)).toBe("100\u56de");
   });
 });
 
 describe("formatDate", () => {
-  it("日付を月/日形式でフォーマット", () => {
-    expect(formatDate("2024-01-15")).toBe("1/15");
-    expect(formatDate("2024-12-25")).toBe("12/25");
+  it("formats YYYY-MM-DD to M月D日", () => {
+    expect(formatDate("2024-01-15")).toBe("1\u670815\u65e5");
+    expect(formatDate("2024-12-25")).toBe("12\u670825\u65e5");
   });
 });
 
 describe("getTodayString", () => {
-  it("今日の日付をYYYY-MM-DD形式で返す", () => {
+  it("returns YYYY-MM-DD", () => {
     const today = getTodayString();
     expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    
+
     const date = new Date();
     const expected = date.toISOString().split("T")[0];
     expect(today).toBe(expected);
@@ -69,16 +65,16 @@ describe("getTodayString", () => {
 });
 
 describe("generateId", () => {
-  it("ユニークなIDを生成", () => {
+  it("returns unique ids", () => {
     const id1 = generateId();
     const id2 = generateId();
-    
+
     expect(id1).toBeTruthy();
     expect(id2).toBeTruthy();
     expect(id1).not.toBe(id2);
   });
 
-  it("文字列を返す", () => {
+  it("returns a non-empty string", () => {
     const id = generateId();
     expect(typeof id).toBe("string");
     expect(id.length).toBeGreaterThan(0);

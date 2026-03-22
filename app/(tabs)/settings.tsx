@@ -1,13 +1,15 @@
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
+import Constants from "expo-constants";
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { APP_ANNOUNCEMENTS } from "@/constants/announcements";
+import { CONTACT_FORM_URL, SNS_LINKS } from "@/constants/app-links";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
+import { useAnnouncements } from "@/hooks/use-announcements";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { useStackStorage } from "@/hooks/use-stack-storage";
 import { useNotificationSettings } from "@/hooks/use-notification-settings";
 import { useSound } from "@/hooks/use-sound";
 
@@ -15,60 +17,50 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
-  const { items, records, reload } = useStackStorage();
   const { playToggle } = useSound();
+  const { markAsSeen } = useAnnouncements();
   const {
     settings: notificationSettings,
     enableNotification,
     disableNotification,
     permissionStatus,
   } = useNotificationSettings();
+
+  const appVersion = Constants.expoConfig?.version ?? "1.0.0";
   const notificationUnsupported = permissionStatus === "unsupported";
 
   const handleToggleNotification = async (value: boolean) => {
     playToggle();
     if (value) {
-      const success = await enableNotification("20:00");
+      const success = await enableNotification(notificationSettings.time);
       if (!success) {
         Alert.alert(
           "通知が許可されていません",
           "通知を受け取るには、端末の設定で通知を許可してください。",
         );
       }
-    } else {
-      await disableNotification();
+      return;
     }
+
+    await disableNotification();
   };
 
-  const handleExportData = () => {
-    Alert.alert(
-      "データの概要",
-      `${items.length}個の項目と${records.length}件の記録があります。\n\n現在はコピーのみ対応しています。`,
-      [{ text: "OK" }],
-    );
-  };
+  const openExternalLink = async (url: string, label: string) => {
+    if (!url) {
+      Alert.alert(
+        "リンク未設定",
+        `${label} のリンクは未設定です。\nconstants/app-links.ts にURLを設定してください。`,
+      );
+      return;
+    }
 
-  const handleClearData = () => {
-    Alert.alert(
-      "データを削除",
-      "すべての項目と記録を削除します。\nこの操作は元に戻せません。",
-      [
-        { text: "キャンセル", style: "cancel" },
-        {
-          text: "削除",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await AsyncStorage.multiRemove(["stack_items", "stack_records"]);
-              await reload();
-              Alert.alert("完了", "データを削除しました。");
-            } catch (error) {
-              Alert.alert("エラー", "データの削除に失敗しました。");
-            }
-          },
-        },
-      ],
-    );
+    const supported = await Linking.canOpenURL(url);
+    if (!supported) {
+      Alert.alert("エラー", "このリンクは開けませんでした。URLを確認してください。");
+      return;
+    }
+
+    await Linking.openURL(url);
   };
 
   const SettingItem = ({
@@ -127,6 +119,7 @@ export default function SettingsScreen() {
       <View style={styles.header}>
         <ThemedText type="title">設定</ThemedText>
       </View>
+
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
           <ThemedText
@@ -145,8 +138,8 @@ export default function SettingsScreen() {
                 <ThemedText type="defaultSemiBold">毎日のリマインダー</ThemedText>
                 <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
                   {notificationUnsupported
-                    ? "Expo Goでは通知が使えません"
-                    : `${notificationSettings.time}に通知します`}
+                    ? "Expo Goでは通知は利用できません"
+                    : "オン/オフのみ設定できます（時刻は各タスクで設定）"}
                 </ThemedText>
               </View>
               <Switch
@@ -164,23 +157,48 @@ export default function SettingsScreen() {
           <ThemedText
             style={[styles.sectionTitle, { color: colors.textSecondary }]}
           >
-            データ
+            お知らせ
           </ThemedText>
           <View style={styles.sectionContent}>
+            {APP_ANNOUNCEMENTS.map((announcement) => (
+              <SettingItem
+                key={announcement.id}
+                icon="quote.bubble"
+                iconColor={colors.tint}
+                title={announcement.title}
+                subtitle={`${announcement.date} / v${announcement.version}`}
+                onPress={() => {
+                  Alert.alert(announcement.title, announcement.message);
+                  markAsSeen(announcement.id);
+                }}
+              />
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText
+            style={[styles.sectionTitle, { color: colors.textSecondary }]}
+          >
+            SNS・お問い合わせ
+          </ThemedText>
+          <View style={styles.sectionContent}>
+            {SNS_LINKS.map((sns) => (
+              <SettingItem
+                key={sns.id}
+                icon="square.and.arrow.up"
+                iconColor="#2196F3"
+                title={sns.label}
+                subtitle={sns.url ? "リンクを開く" : "未設定"}
+                onPress={() => openExternalLink(sns.url, sns.label)}
+              />
+            ))}
             <SettingItem
-              icon="chart.bar.fill"
-              iconColor="#2196F3"
-              title="データをコピー"
-              subtitle={`${items.length}個の項目、${records.length}件の記録`}
-              onPress={handleExportData}
-            />
-            <SettingItem
-              icon="trash.fill"
-              iconColor={colors.error}
-              title="データを削除"
-              subtitle="すべての項目と記録を削除します"
-              onPress={handleClearData}
-              danger
+              icon="paperplane.fill"
+              iconColor={colors.success}
+              title="お問い合わせ"
+              subtitle={CONTACT_FORM_URL ? "Googleフォームを開く" : "未設定"}
+              onPress={() => openExternalLink(CONTACT_FORM_URL, "お問い合わせ")}
             />
           </View>
         </View>
@@ -196,7 +214,7 @@ export default function SettingsScreen() {
               icon="checkmark.circle.fill"
               iconColor={colors.success}
               title="バージョン"
-              subtitle="1.0.0"
+              subtitle={appVersion}
               showArrow={false}
             />
           </View>
@@ -207,7 +225,7 @@ export default function SettingsScreen() {
             積み上げアプリ
           </ThemedText>
           <ThemedText style={{ color: colors.textDisabled, fontSize: 12 }}>
-            今日の積み上げを続けましょう
+            毎日の積み上げを続けましょう
           </ThemedText>
         </View>
 

@@ -199,7 +199,6 @@ export default function HomeScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           onDragEnd={({ data }) => reorderItems(data)}
-          dragEnabled
           activationDistance={8}
           scrollEnabled
           contentContainerStyle={[

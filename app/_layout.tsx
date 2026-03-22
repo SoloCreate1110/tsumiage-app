@@ -5,7 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
-import { Platform } from "react-native";
+import { Alert, Platform } from "react-native";
 import {
   SafeAreaFrameContext,
   SafeAreaInsetsContext,
@@ -18,6 +18,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/manus-runtime";
 import { StackStorageProvider } from "@/hooks/use-stack-storage";
+import { useAnnouncements } from "@/hooks/use-announcements";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -34,6 +35,7 @@ export default function RootLayout() {
 
   const [insets, setInsets] = useState<EdgeInsets>(initialInsets);
   const [frame, setFrame] = useState<Rect>(initialFrame);
+  const { latestUnseen, loading: announcementsLoading, markAsSeen } = useAnnouncements();
 
   // Initialize Manus runtime for cookie injection from parent container
   useEffect(() => {
@@ -50,6 +52,19 @@ export default function RootLayout() {
     const unsubscribe = subscribeSafeAreaInsets(handleSafeAreaUpdate);
     return () => unsubscribe();
   }, [handleSafeAreaUpdate]);
+
+  useEffect(() => {
+    if (announcementsLoading || !latestUnseen) return;
+
+    Alert.alert(latestUnseen.title, latestUnseen.message, [
+      {
+        text: "OK",
+        onPress: () => {
+          markAsSeen(latestUnseen.id);
+        },
+      },
+    ]);
+  }, [announcementsLoading, latestUnseen, markAsSeen]);
 
   // Create clients once and reuse them
   const [queryClient] = useState(

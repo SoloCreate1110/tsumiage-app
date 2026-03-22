@@ -190,7 +190,11 @@ export default function ItemDetailScreen() {
           data: { itemId },
           sound: true,
         },
-        trigger: { hour, minute, repeats: true },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour,
+          minute,
+        },
       });
       return true;
     },
