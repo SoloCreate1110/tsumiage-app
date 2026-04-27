@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import * as Notifications from "expo-notifications";
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -11,52 +12,47 @@ import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useAnnouncements } from "@/hooks/use-announcements";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useNotificationSettings } from "@/hooks/use-notification-settings";
-import { useSound } from "@/hooks/use-sound";
+import { useStackStorage } from "@/hooks/use-stack-storage";
+import { notificationsAreUnsupported, syncAllItemReminders } from "@/lib/item-reminders";
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
-  const { playToggle } = useSound();
   const { markAsSeen } = useAnnouncements();
-  const {
-    settings: notificationSettings,
-    enableNotification,
-    disableNotification,
-    permissionStatus,
-  } = useNotificationSettings();
-
+  const { items } = useStackStorage();
+  const { settings: notificationSettings, enableNotification, disableNotification, permissionStatus } =
+    useNotificationSettings();
   const appVersion = Constants.expoConfig?.version ?? "1.0.0";
-  const notificationUnsupported = permissionStatus === "unsupported";
+  const notificationUnsupported = permissionStatus === "unsupported" || notificationsAreUnsupported();
 
-  const handleToggleNotification = async (value: boolean) => {
-    playToggle();
+  const handleToggleGlobalNotification = async (value: boolean) => {
     if (value) {
-      const success = await enableNotification(notificationSettings.time);
+      const success = await enableNotification();
       if (!success) {
         Alert.alert(
           "通知が許可されていません",
-          "通知を受け取るには、端末の設定で通知を許可してください。",
+          "通知を受け取るには、端末の設定で通知を許可してください。"
         );
+        return;
       }
+      await syncAllItemReminders(items);
       return;
     }
 
     await disableNotification();
+    await Notifications.cancelAllScheduledNotificationsAsync();
   };
 
   const openExternalLink = async (url: string, label: string) => {
     if (!url) {
-      Alert.alert(
-        "リンク未設定",
-        `${label} のリンクは未設定です。\nconstants/app-links.ts にURLを設定してください。`,
-      );
+      Alert.alert("リンク未設定", `${label} のリンクが設定されていません。`);
       return;
     }
 
     const supported = await Linking.canOpenURL(url);
     if (!supported) {
-      Alert.alert("エラー", "このリンクは開けませんでした。URLを確認してください。");
+      Alert.alert("エラー", "このリンクを開けませんでした。");
       return;
     }
 
@@ -70,7 +66,6 @@ export default function SettingsScreen() {
     subtitle,
     onPress,
     showArrow = true,
-    danger = false,
   }: {
     icon: string;
     iconColor: string;
@@ -78,7 +73,6 @@ export default function SettingsScreen() {
     subtitle?: string;
     onPress?: () => void;
     showArrow?: boolean;
-    danger?: boolean;
   }) => (
     <Pressable
       style={[styles.settingItem, { backgroundColor: colors.card }]}
@@ -89,42 +83,28 @@ export default function SettingsScreen() {
         <IconSymbol name={icon as any} size={20} color={iconColor} />
       </View>
       <View style={styles.settingContent}>
-        <ThemedText
-          type="defaultSemiBold"
-          style={danger ? { color: colors.error } : undefined}
-        >
-          {title}
-        </ThemedText>
-        {subtitle && (
+        <ThemedText type="defaultSemiBold">{title}</ThemedText>
+        {subtitle ? (
           <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
             {subtitle}
           </ThemedText>
-        )}
+        ) : null}
       </View>
-      {showArrow && (
+      {showArrow ? (
         <IconSymbol name="chevron.right" size={16} color={colors.textDisabled} />
-      )}
+      ) : null}
     </Pressable>
   );
 
   return (
-    <ThemedView
-      style={[
-        styles.container,
-        {
-          paddingTop: Math.max(insets.top, 20),
-        },
-      ]}
-    >
+    <ThemedView style={[styles.container, { paddingTop: Math.max(insets.top, 20) }]}>
       <View style={styles.header}>
         <ThemedText type="title">設定</ThemedText>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <ThemedText
-            style={[styles.sectionTitle, { color: colors.textSecondary }]}
-          >
+          <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
             通知
           </ThemedText>
           <View style={styles.sectionContent}>
@@ -135,16 +115,11 @@ export default function SettingsScreen() {
               ]}
             >
               <View style={styles.settingContent}>
-                <ThemedText type="defaultSemiBold">毎日のリマインダー</ThemedText>
-                <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-                  {notificationUnsupported
-                    ? "Expo Goでは通知は利用できません"
-                    : "オン/オフのみ設定できます（時刻は各タスクで設定）"}
-                </ThemedText>
+                <ThemedText type="defaultSemiBold">通知のオン / オフ</ThemedText>
               </View>
               <Switch
                 value={notificationSettings.enabled}
-                onValueChange={handleToggleNotification}
+                onValueChange={(value) => void handleToggleGlobalNotification(value)}
                 disabled={notificationUnsupported}
                 trackColor={{ false: colors.border, true: colors.tint + "80" }}
                 thumbColor={notificationSettings.enabled ? colors.tint : "#f4f3f4"}
@@ -154,9 +129,7 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
-          <ThemedText
-            style={[styles.sectionTitle, { color: colors.textSecondary }]}
-          >
+          <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
             お知らせ
           </ThemedText>
           <View style={styles.sectionContent}>
@@ -177,9 +150,7 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
-          <ThemedText
-            style={[styles.sectionTitle, { color: colors.textSecondary }]}
-          >
+          <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
             SNS・お問い合わせ
           </ThemedText>
           <View style={styles.sectionContent}>
@@ -197,16 +168,14 @@ export default function SettingsScreen() {
               icon="paperplane.fill"
               iconColor={colors.success}
               title="お問い合わせ"
-              subtitle={CONTACT_FORM_URL ? "Googleフォームを開く" : "未設定"}
+              subtitle={CONTACT_FORM_URL ? "フォームを開く" : "未設定"}
               onPress={() => openExternalLink(CONTACT_FORM_URL, "お問い合わせ")}
             />
           </View>
         </View>
 
         <View style={styles.section}>
-          <ThemedText
-            style={[styles.sectionTitle, { color: colors.textSecondary }]}
-          >
+          <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
             アプリ情報
           </ThemedText>
           <View style={styles.sectionContent}>
@@ -225,7 +194,7 @@ export default function SettingsScreen() {
             積み上げアプリ
           </ThemedText>
           <ThemedText style={{ color: colors.textDisabled, fontSize: 12 }}>
-            毎日の積み上げを続けましょう
+            個別の通知時刻は各積み上げの詳細画面から設定します
           </ThemedText>
         </View>
 

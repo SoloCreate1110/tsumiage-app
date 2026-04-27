@@ -21,6 +21,12 @@ export interface ReminderSetting {
   time: string; // HH:MM
 }
 
+export interface ReminderSlot {
+  id: string;
+  enabled: boolean;
+  time: string; // HH:MM
+}
+
 // Stack item
 export interface StackItem {
   id: string;
@@ -29,8 +35,12 @@ export interface StackItem {
   icon: string;
   color: string;
   totalValue: number;
+  unitLabel?: string;
+  pomodoroAutoSwitchBreak?: boolean;
   goal?: Goal;
   reminder?: ReminderSetting;
+  reminderSlots?: ReminderSlot[];
+  reminderSlotCount?: number;
   createdAt: string;
   updatedAt: string;
   order?: number; // 並び順
@@ -125,8 +135,14 @@ export function formatTimeDetailed(seconds: number): string {
 }
 
 // Format count
-export function formatCount(count: number): string {
-  return `${count}回`;
+export function formatCount(count: number, unitLabel: string = "回"): string {
+  return `${count}${unitLabel}`;
+}
+
+export function getCountUnitLabel(item?: Pick<StackItem, "type" | "unitLabel"> | null): string {
+  if (!item || item.type !== "count") return "回";
+  const trimmed = item.unitLabel?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : "回";
 }
 
 // Format date label (MM/DD)

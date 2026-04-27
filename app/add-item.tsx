@@ -33,17 +33,30 @@ export default function AddItemModal() {
   const [type, setType] = useState<StackType>("time");
   const [selectedIcon, setSelectedIcon] = useState("clock.fill");
   const [selectedColor, setSelectedColor] = useState<string>(COLOR_OPTIONS[0]);
+  const [unitLabel, setUnitLabel] = useState("回");
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || isSaving) return;
 
-    await addItem(name.trim(), type, selectedIcon, selectedColor);
-    await playSuccess();
-    router.back();
+    try {
+      setIsSaving(true);
+      await addItem(
+        name.trim(),
+        type,
+        selectedIcon,
+        selectedColor,
+        unitLabel.trim() || "回"
+      );
+      void playSuccess();
+      router.back();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleCancel = () => {
-    playClick();
+  const handleCancel = async () => {
+    void playClick();
     router.back();
   };
 
@@ -66,15 +79,15 @@ export default function AddItemModal() {
         <Pressable
           onPress={handleSave}
           style={styles.headerButton}
-          disabled={!name.trim()}
+          disabled={!name.trim() || isSaving}
         >
           <ThemedText
             style={{
-              color: name.trim() ? colors.tint : colors.textDisabled,
+              color: name.trim() && !isSaving ? colors.tint : colors.textDisabled,
               fontWeight: "600",
             }}
           >
-            保存
+            {isSaving ? "保存中" : "保存"}
           </ThemedText>
         </Pressable>
       </View>
@@ -101,6 +114,29 @@ export default function AddItemModal() {
             autoFocus
           />
         </View>
+
+        {type === "count" ? (
+          <View style={styles.section}>
+            <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
+              単位
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.card,
+                  color: colors.text,
+                  borderColor: colors.border,
+                },
+              ]}
+              placeholder="例: 回、冊、問"
+              placeholderTextColor={colors.textDisabled}
+              value={unitLabel}
+              onChangeText={setUnitLabel}
+              maxLength={4}
+            />
+          </View>
+        ) : null}
 
         {/* 繧ｿ繧､繝鈴∈謚・*/}
         <View style={styles.section}>
@@ -272,7 +308,7 @@ export default function AddItemModal() {
                 {name || "項目名"}
               </ThemedText>
               <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-                {type === "time" ? "時間を積み上げ" : "回数を積み上げ"}
+                {type === "time" ? "時間を積み上げ" : `${unitLabel || "回"}を積み上げ`}
               </ThemedText>
             </View>
           </View>

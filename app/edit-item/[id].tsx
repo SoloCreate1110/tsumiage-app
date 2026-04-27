@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useMemo, useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -23,26 +23,25 @@ export default function EditItemModal() {
   const [name, setName] = useState(item?.name ?? "");
   const [selectedIcon, setSelectedIcon] = useState(item?.icon ?? ICON_OPTIONS[0].name);
   const [selectedColor, setSelectedColor] = useState<string>(item?.color ?? COLOR_OPTIONS[0]);
+  const [unitLabel, setUnitLabel] = useState(item?.unitLabel ?? "回");
 
   useEffect(() => {
     if (!item) return;
     setName(item.name);
     setSelectedIcon(item.icon);
     setSelectedColor(item.color);
+    setUnitLabel(item.unitLabel ?? "回");
   }, [item]);
 
   const handleSave = async () => {
-    if (!id || !item) return;
-    if (!name.trim()) return;
+    if (!id || !item || !name.trim()) return;
+
     await updateItem(id, {
       name: name.trim(),
       icon: selectedIcon,
       color: selectedColor,
+      unitLabel: item.type === "count" ? unitLabel.trim() || "回" : item.unitLabel,
     });
-    router.back();
-  };
-
-  const handleCancel = () => {
     router.back();
   };
 
@@ -65,15 +64,11 @@ export default function EditItemModal() {
       ]}
     >
       <View style={styles.header}>
-        <Pressable onPress={handleCancel} style={styles.headerButton}>
+        <Pressable onPress={() => router.back()} style={styles.headerButton}>
           <ThemedText style={{ color: colors.tint }}>キャンセル</ThemedText>
         </Pressable>
         <ThemedText type="subtitle">項目を編集</ThemedText>
-        <Pressable
-          onPress={handleSave}
-          style={styles.headerButton}
-          disabled={!name.trim()}
-        >
+        <Pressable onPress={handleSave} style={styles.headerButton} disabled={!name.trim()}>
           <ThemedText
             style={{
               color: name.trim() ? colors.tint : colors.textDisabled,
@@ -117,10 +112,33 @@ export default function EditItemModal() {
               color={colors.textSecondary}
             />
             <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-              {item.type === "time" ? "時間" : "回数"}（変更不可）
+              {item.type === "time" ? "時間タイプ（変更不可）" : "カウントタイプ（変更不可）"}
             </ThemedText>
           </View>
         </View>
+
+        {item.type === "count" ? (
+          <View style={styles.section}>
+            <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
+              単位
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.card,
+                  color: colors.text,
+                  borderColor: colors.border,
+                },
+              ]}
+              placeholder="例: 回、冊、問"
+              placeholderTextColor={colors.textDisabled}
+              value={unitLabel}
+              onChangeText={setUnitLabel}
+              maxLength={4}
+            />
+          </View>
+        ) : null}
 
         <View style={styles.section}>
           <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
@@ -134,13 +152,8 @@ export default function EditItemModal() {
                   styles.iconOption,
                   {
                     backgroundColor:
-                      selectedIcon === icon.name
-                        ? selectedColor + "20"
-                        : colors.card,
-                    borderColor:
-                      selectedIcon === icon.name
-                        ? selectedColor
-                        : colors.border,
+                      selectedIcon === icon.name ? selectedColor + "20" : colors.card,
+                    borderColor: selectedIcon === icon.name ? selectedColor : colors.border,
                   },
                 ]}
                 onPress={() => setSelectedIcon(icon.name)}
@@ -173,9 +186,9 @@ export default function EditItemModal() {
                 ]}
                 onPress={() => setSelectedColor(color)}
               >
-                {selectedColor === color && (
+                {selectedColor === color ? (
                   <IconSymbol name="checkmark.circle.fill" size={20} color="#fff" />
-                )}
+                ) : null}
               </Pressable>
             ))}
           </View>
@@ -194,24 +207,13 @@ export default function EditItemModal() {
               },
             ]}
           >
-            <View
-              style={[
-                styles.previewIcon,
-                { backgroundColor: selectedColor + "20" },
-              ]}
-            >
-              <IconSymbol
-                name={selectedIcon as any}
-                size={24}
-                color={selectedColor}
-              />
+            <View style={[styles.previewIcon, { backgroundColor: selectedColor + "20" }]}>
+              <IconSymbol name={selectedIcon as any} size={24} color={selectedColor} />
             </View>
             <View style={styles.previewContent}>
-              <ThemedText type="defaultSemiBold">
-                {name || "項目名"}
-              </ThemedText>
+              <ThemedText type="defaultSemiBold">{name || "項目名"}</ThemedText>
               <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-                {item.type === "time" ? "時間を積み上げ" : "回数を積み上げ"}
+                {item.type === "time" ? "時間を積み上げ" : `${unitLabel || "回"}を積み上げ`}
               </ThemedText>
             </View>
           </View>

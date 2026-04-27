@@ -5,8 +5,7 @@ import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors, BorderRadius, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { formatCount, formatTime, StackItem } from "@/types/stack";
-import { getLevelInfo } from "@/constants/levels";
+import { formatCount, formatTime, getCountUnitLabel, StackItem } from "@/types/stack";
 
 interface StackItemCardProps {
   item: StackItem;
@@ -30,6 +29,7 @@ const StackItemCardComponent = ({
   const baseCardBg = colorScheme === "dark" ? "#1B1B1B" : "#FFFFFF";
   const baseBorder = colorScheme === "dark" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)";
   const pulse = useRef(new Animated.Value(1)).current;
+  const countUnitLabel = getCountUnitLabel(item);
 
   useEffect(() => {
     if (!isRunning) {
@@ -56,12 +56,15 @@ const StackItemCardComponent = ({
   }, [isRunning, pulse]);
 
   const displayValue =
-    item.type === "time" ? formatTime(item.totalValue) : formatCount(item.totalValue);
+    item.type === "time" ? formatTime(item.totalValue) : formatCount(item.totalValue, countUnitLabel);
 
   const todayDisplay =
-    item.type === "time" ? formatTime(todayValue) : formatCount(todayValue);
+    item.type === "time" ? formatTime(todayValue) : formatCount(todayValue, countUnitLabel);
 
-  const levelInfo = getLevelInfo(item.type, item.totalValue);
+  const activeReminderTimes = (item.reminderSlots ?? [])
+    .slice(0, Math.min(5, Math.max(1, item.reminderSlotCount ?? 1)))
+    .filter((slot) => slot.enabled)
+    .map((slot) => slot.time);
 
   return (
     <Pressable onPress={onPress} onLongPress={onLongPress} disabled={!onPress}>
@@ -96,56 +99,52 @@ const StackItemCardComponent = ({
             />
           )}
           <View style={styles.topRow}>
-        <View>
-          <ThemedText style={[styles.label, { color: colors.textSecondary }]}>今日の積み上げ</ThemedText>
-          <ThemedText type="title" style={{ fontSize: 32, lineHeight: 38, color: colors.text }}>
-            {todayDisplay}
-          </ThemedText>
-        </View>
-
-        {isRunning ? (
-          <View style={[styles.runningBadge, { backgroundColor: item.color + "20" }]}> 
-            <Animated.View
-              style={[
-                styles.runningDot,
-                {
-                  backgroundColor: item.color,
-                  transform: [{ scale: pulse }],
-                },
-              ]}
-            />
-            <ThemedText style={[styles.runningText, { color: item.color }]}>作業中</ThemedText>
-          </View>
-        ) : (
-          <View style={[styles.startBadge, { borderColor: colors.border }]}> 
-            <IconSymbol name="play.fill" size={12} color={colors.textSecondary} />
-            <ThemedText style={{ fontSize: 10, color: colors.textSecondary, marginLeft: 4 }}>
-              開始
+            <ThemedText type="title" style={{ fontSize: 32, lineHeight: 38, color: colors.text }}>
+              {todayDisplay}
             </ThemedText>
+            <View style={styles.totalInfo}>
+              <ThemedText style={[styles.totalLabel, { color: colors.textSecondary }]}>累計</ThemedText>
+              <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>
+                {displayValue}
+              </ThemedText>
+            </View>
           </View>
-        )}
-      </View>
 
-      <View style={{ height: Spacing.s }} />
+          <View style={{ height: Spacing.s }} />
 
-      <View style={styles.bottomRow}>
-        <View style={styles.iconInfo}>
-          <View style={[styles.iconCircle, { backgroundColor: item.color + "15" }]}>
-            <IconSymbol name={item.icon as any} size={18} color={item.color} />
-          </View>
-          <ThemedText type="defaultSemiBold" style={styles.name}>
-            {item.name}
-          </ThemedText>
-          <View style={[styles.rankBadge, { backgroundColor: levelInfo.current.color + "20" }]}> 
-            <ThemedText style={[styles.rankText, { color: levelInfo.current.color }]}>
-              {levelInfo.current.title}
-            </ThemedText>
-          </View>
-        </View>
+          <View style={styles.bottomRow}>
+            <View style={styles.iconInfo}>
+              <View style={[styles.iconCircle, { backgroundColor: item.color + "15" }]}>
+                <IconSymbol name={item.icon as any} size={18} color={item.color} />
+              </View>
+              <View style={styles.nameBlock}>
+                <View style={styles.nameRow}>
+                  <ThemedText type="defaultSemiBold" style={styles.name}>
+                    {item.name}
+                  </ThemedText>
+                  {activeReminderTimes.length > 0 ? (
+                    <ThemedText style={[styles.reminderTimes, { color: colors.textSecondary }]}>
+                      {activeReminderTimes.join(" / ")}
+                    </ThemedText>
+                  ) : null}
+                </View>
+              </View>
+            </View>
 
-        <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-          累計 {displayValue}
-        </ThemedText>
+            {isRunning ? (
+              <View style={[styles.runningBadge, { backgroundColor: item.color + "20" }]}>
+                <Animated.View
+                  style={[
+                    styles.runningDot,
+                    {
+                      backgroundColor: item.color,
+                      transform: [{ scale: pulse }],
+                    },
+                  ]}
+                />
+                <ThemedText style={[styles.runningText, { color: item.color }]}>作業中</ThemedText>
+              </View>
+            ) : null}
           </View>
         </Animated.View>
       )}
@@ -196,6 +195,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.s,
+    flex: 1,
+  },
+  nameBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.s,
   },
   iconCircle: {
     width: 28,
@@ -206,16 +216,7 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: 14,
-  },
-  rankBadge: {
-    alignSelf: "center",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  rankText: {
-    fontSize: 9,
-    fontWeight: "bold",
+    flexShrink: 1,
   },
   runningBadge: {
     flexDirection: "row",
@@ -224,14 +225,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-  },
-  startBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
   },
   runningDot: {
     width: 6,
@@ -242,8 +235,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "600",
   },
-  label: {
+  totalLabel: {
     fontSize: 12,
     marginBottom: 4,
+  },
+  totalInfo: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+    marginLeft: Spacing.m,
+  },
+  reminderTimes: {
+    fontSize: 11,
+    flexShrink: 1,
+    textAlign: "right",
   },
 });

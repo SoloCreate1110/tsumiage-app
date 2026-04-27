@@ -9,6 +9,7 @@ import {
   getTodayDate,
   getTodayString,
   toDateString,
+  ReminderSlot,
   StackItem,
   StackRecord,
   StackType,
@@ -18,6 +19,34 @@ import {
 const ITEMS_KEY = "stack_items";
 const RECORDS_KEY = "stack_records";
 const DAILY_NOTES_KEY = "stack_daily_notes";
+const DEFAULT_REMINDER_TIME = "20:00";
+const MAX_REMINDER_SLOTS = 5;
+
+const buildDefaultReminderSlots = (): ReminderSlot[] =>
+  Array.from({ length: MAX_REMINDER_SLOTS }, (_, index) => ({
+    id: `slot-${index + 1}`,
+    enabled: false,
+    time: DEFAULT_REMINDER_TIME,
+  }));
+
+const normalizeReminderSlots = (item: StackItem): ReminderSlot[] => {
+  const baseSlots = buildDefaultReminderSlots();
+  const legacyReminder = item.reminder;
+  const incoming = item.reminderSlots?.length
+    ? item.reminderSlots
+    : legacyReminder
+    ? [{ id: "slot-1", enabled: legacyReminder.enabled, time: legacyReminder.time }]
+    : [];
+
+  return baseSlots.map((slot, index) => {
+    const source = incoming[index];
+    return {
+      id: source?.id ?? slot.id,
+      enabled: source?.enabled ?? slot.enabled,
+      time: source?.time ?? slot.time,
+    };
+  });
+};
 
 const normalizeRecordDate = (value: string, createdAt?: string): string => {
   if (createdAt) {
@@ -48,6 +77,44 @@ const normalizeRecordDate = (value: string, createdAt?: string): string => {
   return value;
 };
 
+const createSampleItems = (): StackItem[] => {
+  const now = new Date().toISOString();
+  return [
+    {
+      id: generateId(),
+      name: "読書",
+      type: "time",
+      icon: "book.fill",
+      color: "#4CAF50",
+      totalValue: 0,
+      unitLabel: "回",
+      order: 0,
+      reminder: { enabled: false, time: DEFAULT_REMINDER_TIME },
+      reminderSlots: buildDefaultReminderSlots(),
+      reminderSlotCount: 1,
+      pomodoroAutoSwitchBreak: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: generateId(),
+      name: "断捨離",
+      type: "count",
+      icon: "house.fill",
+      color: "#FF6B35",
+      totalValue: 0,
+      unitLabel: "個",
+      order: 1,
+      reminder: { enabled: false, time: DEFAULT_REMINDER_TIME },
+      reminderSlots: buildDefaultReminderSlots(),
+      reminderSlotCount: 1,
+      pomodoroAutoSwitchBreak: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+};
+
 function useStackStorageInternal() {
   const [items, setItems] = useState<StackItem[]>([]);
   const [records, setRecords] = useState<StackRecord[]>([]);
@@ -72,7 +139,14 @@ function useStackStorageInternal() {
         const withOrder = parsedItems.map((item, index) => ({
           ...item,
           order: item.order ?? index,
-          reminder: item.reminder ?? { enabled: false, time: "20:00" },
+          unitLabel: item.unitLabel ?? "回",
+          pomodoroAutoSwitchBreak: item.pomodoroAutoSwitchBreak ?? true,
+          reminder: item.reminder ?? { enabled: false, time: DEFAULT_REMINDER_TIME },
+          reminderSlots: normalizeReminderSlots(item),
+          reminderSlotCount: Math.min(
+            MAX_REMINDER_SLOTS,
+            Math.max(1, item.reminderSlotCount ?? 1)
+          ),
         }));
         const sortedItems = [...withOrder].sort((a, b) => {
           const ao = a.order ?? 0;
@@ -81,6 +155,10 @@ function useStackStorageInternal() {
           return a.createdAt.localeCompare(b.createdAt);
         });
         setItems(sortedItems);
+      } else {
+        const sampleItems = createSampleItems();
+        await AsyncStorage.setItem(ITEMS_KEY, JSON.stringify(sampleItems));
+        setItems(sampleItems);
       }
       if (recordsData) {
         const parsed = JSON.parse(recordsData) as StackRecord[];
@@ -136,7 +214,13 @@ function useStackStorageInternal() {
 
   // 譁ｰ隕城・岼繧定ｿｽ蜉
   const addItem = useCallback(
-    async (name: string, type: StackType, icon: string, color: string) => {
+    async (
+      name: string,
+      type: StackType,
+      icon: string,
+      color: string,
+      unitLabel: string = "回"
+    ) => {
       console.log('[addItem] Starting to add item:', { name, type, icon, color });
       const now = new Date().toISOString();
       const newItem: StackItem = {
@@ -146,8 +230,12 @@ function useStackStorageInternal() {
         icon,
         color,
         totalValue: 0,
+        unitLabel: type === "count" ? unitLabel : "回",
         order: items.length,
-        reminder: { enabled: false, time: "20:00" },
+        reminder: { enabled: false, time: DEFAULT_REMINDER_TIME },
+        reminderSlots: buildDefaultReminderSlots(),
+        reminderSlotCount: 1,
+        pomodoroAutoSwitchBreak: true,
         createdAt: now,
         updatedAt: now,
       };

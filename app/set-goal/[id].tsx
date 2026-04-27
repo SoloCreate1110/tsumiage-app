@@ -13,7 +13,15 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
 import { useSound } from "@/hooks/use-sound";
 import { COLOR_OPTIONS, ICON_OPTIONS } from "@/types/stack";
-import { Goal, calculateDaysRemaining, formatCount, formatTime, getTodayString, toDateString } from "@/types/stack";
+import {
+  Goal,
+  calculateDaysRemaining,
+  formatCount,
+  formatTime,
+  getCountUnitLabel,
+  getTodayString,
+  toDateString,
+} from "@/types/stack";
 
 export default function SetGoalModal() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -139,7 +147,7 @@ export default function SetGoalModal() {
     );
   }
 
-  const unit = item.type === "time" ? "秒" : "回";
+  const unit = item.type === "time" ? "秒" : getCountUnitLabel(item);
   const daysRemaining = deadline ? calculateDaysRemaining(deadline) : null;
   const currentTotal = item.totalValue || 0;
 
@@ -256,7 +264,7 @@ export default function SetGoalModal() {
               <ThemedText style={{ textAlign: "center", color: colors.textSecondary, fontSize: 12 }}>
                 1日あたりの目安</ThemedText>
               <ThemedText style={{ textAlign: "center", fontSize: 24, fontWeight: "bold", color: colors.text }}>
-                {item.type === "time" ? formatTime(dailyPace) : formatCount(dailyPace)}
+                {item.type === "time" ? formatTime(dailyPace) : formatCount(dailyPace, unit)}
               </ThemedText>
             </View>
 
@@ -268,7 +276,7 @@ export default function SetGoalModal() {
         <View style={[styles.itemInfo, { backgroundColor: colors.card }]}>
           <ThemedText type="defaultSemiBold">{item.name}</ThemedText>
           <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-            現在の累計: {item.type === "time" ? formatTime(currentTotal) : formatCount(currentTotal)}
+            現在の累計: {item.type === "time" ? formatTime(currentTotal) : formatCount(currentTotal, unit)}
           </ThemedText>
         </View>
 

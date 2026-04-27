@@ -17,7 +17,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
-import { getTodayString, StackItem } from "@/types/stack";
+import { formatTimeDetailed, getTodayString, StackItem } from "@/types/stack";
 import { useQuoteHistory } from "@/hooks/use-quote-history";
 import { useSound } from "@/hooks/use-sound";
 
@@ -64,23 +64,41 @@ export default function HomeScreen() {
 
   const streak = calculateStreak();
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
+  const [runningSession, setRunningSession] = useState<{ itemId: string; startAt: number } | null>(null);
+  const [runningElapsedSeconds, setRunningElapsedSeconds] = useState(0);
 
   const refreshRunning = useCallback(async () => {
     if (items.length === 0) {
       setRunningIds(new Set());
+      setRunningSession(null);
       return;
     }
-    const keys = items.map((i) => `timer_state_${i.id}`);
+    const timerKeys = items.map((i) => `timer_state_${i.id}`);
+    const pomodoroKeys = items.map((i) => `pomodoro_state_${i.id}`);
     try {
-      const pairs = await AsyncStorage.multiGet(keys);
+      const pairs = await AsyncStorage.multiGet([...timerKeys, ...pomodoroKeys]);
       const next = new Set<string>();
+      let activeSession: { itemId: string; startAt: number } | null = null;
       pairs.forEach(([key, value]) => {
         if (!value) return;
-        const id = key.replace("timer_state_", "");
-        const parsed = JSON.parse(value) as { startAt?: number };
-        if (parsed?.startAt) next.add(id);
+        const isPomodoro = key.startsWith("pomodoro_state_");
+        const id = key.replace(isPomodoro ? "pomodoro_state_" : "timer_state_", "");
+        const parsed = JSON.parse(value) as {
+          startAt?: number;
+          phaseStartedAt?: number | null;
+          isRunning?: boolean;
+        };
+        const startAt = isPomodoro ? parsed.phaseStartedAt : parsed.startAt;
+        if (parsed?.isRunning === false) return;
+        if (startAt) {
+          next.add(id);
+          if (!activeSession || startAt < activeSession.startAt) {
+            activeSession = { itemId: id, startAt };
+          }
+        }
       });
       setRunningIds(next);
+      setRunningSession(activeSession);
     } catch (error) {
       console.error("Failed to load running timers:", error);
     }
@@ -96,6 +114,28 @@ export default function HomeScreen() {
     });
     return () => sub.remove();
   }, [refreshRunning]);
+
+  useEffect(() => {
+    if (!runningSession) {
+      setRunningElapsedSeconds(0);
+      return;
+    }
+
+    const sync = () => {
+      setRunningElapsedSeconds(
+        Math.max(0, Math.floor((Date.now() - runningSession.startAt) / 1000))
+      );
+    };
+
+    sync();
+    const intervalId = setInterval(sync, 1000);
+    return () => clearInterval(intervalId);
+  }, [runningSession]);
+
+  const runningItem = useMemo(
+    () => items.find((entry) => entry.id === runningSession?.itemId) ?? null,
+    [items, runningSession]
+  );
 
   const renderItem = useCallback(
     ({ item, drag, isActive }: RenderItemParams<StackItem>) => (
@@ -191,43 +231,67 @@ export default function HomeScreen() {
         </View>
       </Pressable>
 
+      {runningItem ? (
+        <View
+          style={[
+            styles.liveBanner,
+            { backgroundColor: runningItem.color + "18", borderColor: runningItem.color + "55" },
+          ]}
+        >
+          <View style={[styles.liveDot, { backgroundColor: runningItem.color }]} />
+          <View style={{ flex: 1 }}>
+            <ThemedText type="defaultSemiBold">{runningItem.name} を積み上げ中</ThemedText>
+            <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+              経過 {formatTimeDetailed(runningElapsedSeconds)}
+            </ThemedText>
+          </View>
+          <Pressable onPress={() => handleItemPress(runningItem.id)}>
+            <ThemedText style={{ color: runningItem.color, fontWeight: "600" }}>開く</ThemedText>
+          </Pressable>
+        </View>
+      ) : null}
+
 
       {/* 鬆・岼荳隕ｧ */}
-      {items.length > 0 ? (
-        <DraggableFlatList
-          data={items}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          onDragEnd={({ data }) => reorderItems(data)}
-          activationDistance={8}
-          scrollEnabled
-          contentContainerStyle={[
-            styles.listContent,
-            { paddingBottom: insets.bottom + 220 },
-          ]}
-          showsVerticalScrollIndicator={false}
-        />
-      ) : (
-        <View style={styles.emptyState}>
-          <View
-            style={[
-              styles.emptyIcon,
-              { backgroundColor: colors.tint + "20" },
+      <View style={styles.listWrapper}>
+        {items.length > 0 ? (
+          <DraggableFlatList
+            data={items}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            onDragEnd={({ data }) => reorderItems(data)}
+            activationDistance={8}
+            style={styles.list}
+            containerStyle={styles.listContainer}
+            scrollEnabled
+            contentContainerStyle={[
+              styles.listContent,
+              { paddingBottom: insets.bottom + 220 },
             ]}
-          >
-            <IconSymbol name="chart.bar.fill" size={48} color={colors.tint} />
+            showsVerticalScrollIndicator={false}
+          />
+        ) : (
+          <View style={styles.emptyState}>
+            <View
+              style={[
+                styles.emptyIcon,
+                { backgroundColor: colors.tint + "20" },
+              ]}
+            >
+              <IconSymbol name="chart.bar.fill" size={48} color={colors.tint} />
+            </View>
+            <ThemedText type="subtitle" style={styles.emptyTitle}>
+              まだ項目がありません
+            </ThemedText>
+            <ThemedText
+              style={[styles.emptyText, { color: colors.textSecondary }]}
+            >
+              下のボタンから積み上げたい項目を{"\n"}
+              追加してみましょう
+            </ThemedText>
           </View>
-          <ThemedText type="subtitle" style={styles.emptyTitle}>
-            まだ項目がありません
-          </ThemedText>
-          <ThemedText
-            style={[styles.emptyText, { color: colors.textSecondary }]}
-          >
-            下のボタンから積み上げたい項目を{"\n"}
-            追加してみましょう
-          </ThemedText>
-        </View>
-      )}
+        )}
+      </View>
 
       {/* FAB */}
       <Pressable
@@ -281,6 +345,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderLeftWidth: 4,
   },
+  liveBanner: {
+    marginHorizontal: Spacing.m,
+    marginBottom: Spacing.m,
+    padding: Spacing.m,
+    borderRadius: BorderRadius.card,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.s,
+  },
+  liveDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
   quoteHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -306,9 +385,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: "right",
   },
+  listWrapper: {
+    flex: 1,
+    minHeight: 1,
+  },
   listContent: {
+    flexGrow: 1,
     paddingHorizontal: Spacing.m,
     paddingBottom: 100,
+  },
+  list: {
+    flex: 1,
+  },
+  listContainer: {
+    flex: 1,
   },
   emptyState: {
     flex: 1,
