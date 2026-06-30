@@ -9,9 +9,10 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 interface TimeInputProps {
     value: number | undefined; // 秒単位
     onChange: (seconds: number) => void;
+    onFocus?: () => void;
 }
 
-export function TimeInput({ value, onChange }: TimeInputProps) {
+export function TimeInput({ value, onChange, onFocus }: TimeInputProps) {
     const colorScheme = useColorScheme();
     const colors = Colors[colorScheme ?? "light"];
 
@@ -78,6 +79,7 @@ export function TimeInput({ value, onChange }: TimeInputProps) {
                         style={[styles.input, { color: colors.text }]}
                         value={hours.toString()}
                         onChangeText={(text) => updateTime(parseInt(text || "0", 10), minutes)}
+                        onFocus={onFocus}
                         keyboardType="numeric"
                         maxLength={3}
                     />
@@ -108,6 +110,7 @@ export function TimeInput({ value, onChange }: TimeInputProps) {
                         style={[styles.input, { color: colors.text }]}
                         value={minutes.toString().padStart(2, '0')}
                         onChangeText={(text) => updateTime(hours, parseInt(text || "0", 10))}
+                        onFocus={onFocus}
                         keyboardType="numeric"
                         maxLength={2}
                     />

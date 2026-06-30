@@ -4,11 +4,13 @@
  */
 
 import * as Haptics from "expo-haptics";
-import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams, usePathname } from "expo-router";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Alert,
   FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -40,6 +42,7 @@ import { usePomodoroTimer } from "@/hooks/use-pomodoro-timer";
 import {
   calculateGoalProgress,
   calculateDaysRemaining,
+  calculateDaysUntilDate,
   formatCount,
   formatDate,
   formatTime,
@@ -50,12 +53,19 @@ import {
   StackRecord,
 } from "@/types/stack";
 import { useNotificationSettings } from "@/hooks/use-notification-settings";
+import { usePomodoroSettings } from "@/hooks/use-pomodoro-settings";
 import { useSound } from "@/hooks/use-sound";
 import { cancelItemReminders, scheduleItemReminders } from "@/lib/item-reminders";
 import {
   cancelPomodoroNotifications,
+  ensurePomodoroNotificationsReady,
   schedulePomodoroPhaseNotifications,
 } from "@/lib/pomodoro-notifications";
+import { setActivePomodoroItemScreen } from "@/lib/pomodoro-foreground-state";
+import {
+  cancelLongSessionReminder,
+  scheduleLongSessionReminder,
+} from "@/lib/long-running-session-notifications";
 
 interface GroupedRecord {
   date: string;
@@ -65,6 +75,7 @@ interface GroupedRecord {
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
@@ -85,11 +96,30 @@ export default function ItemDetailScreen() {
   const item = useMemo(() => items.find((i) => i.id === id), [items, id]);
   const isExpoGo = Constants.executionEnvironment === "storeClient";
   const { settings: notificationSettings, requestPermission } = useNotificationSettings();
+  const { settings: pomodoroSettings, loading: pomodoroSettingsLoading } = usePomodoroSettings();
+  const pomodoroWorkSeconds = pomodoroSettings.workMinutes * 60;
+  const pomodoroBreakSeconds = pomodoroSettings.breakMinutes * 60;
+  const pomodoroWorkLabel = `${pomodoroSettings.workMinutes}分`;
+  const pomodoroBreakLabel = `${pomodoroSettings.breakMinutes}分`;
+  const isCurrentItemScreen = id ? pathname === `/item/${id}` : false;
+  const isCurrentItemScreenRef = useRef(isCurrentItemScreen);
+
+  useEffect(() => {
+    isCurrentItemScreenRef.current = isCurrentItemScreen;
+  }, [isCurrentItemScreen]);
 
   useFocusEffect(
     useCallback(() => {
       reload();
     }, [reload])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!id) return undefined;
+      setActivePomodoroItemScreen(id);
+      return () => setActivePomodoroItemScreen(null);
+    }, [id])
   );
 
   // 險倬鹸繧呈律莉倥＃縺ｨ縺ｫ繧ｰ繝ｫ繝ｼ繝怜喧・域怙譁ｰ10譌･蛻・ｼ・
@@ -144,6 +174,7 @@ export default function ItemDetailScreen() {
   const [adjustSeconds, setAdjustSeconds] = useState(0);
   const [adjustCount, setAdjustCount] = useState(1);
   const [adjustDate, setAdjustDate] = useState<string | null>(null);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const dailyNoteLoadedRef = useRef(false);
 
   useEffect(() => {
@@ -176,6 +207,7 @@ export default function ItemDetailScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showPomodoroMode, setShowPomodoroMode] = useState(false);
   const [autoSwitchBreak, setAutoSwitchBreak] = useState(true);
+  const [appState, setAppState] = useState(AppState.currentState);
   const timerStartRef = useRef<number | null>(null);
   const TIMER_STATE_KEY = id ? `timer_state_${id}` : null;
 
@@ -275,20 +307,21 @@ export default function ItemDetailScreen() {
   );
 
   // 繝昴Δ繝峨・繝ｭ繧ｿ繧､繝槭・終了凾縺ｫ譎る俣繧貞刈邂・
-  const WORK_DURATION = 25 * 60; // 25蛻・
-
-  const handlePomodoroComplete = useCallback(async () => {
+  const handlePomodoroComplete = useCallback(async (completedSeconds: number, shouldPlayEffects: boolean) => {
     if (id) {
-      // 25蛻・・菴懈･ｭ縺悟ｮ御ｺ・＠縺溘ｉ縲・5蛻・ｒ險倬鹸縺ｫ霑ｽ蜉
       const note = sessionNote.trim() ? sessionNote.trim() : undefined;
-      await addRecord(id, WORK_DURATION, note);
+      await addRecord(id, completedSeconds, note);
       if (note) setSessionNote("");
-      void playComplete();
+      if (shouldPlayEffects && isCurrentItemScreenRef.current) {
+        void playComplete();
+      }
     }
   }, [id, addRecord, playComplete, sessionNote]);
 
-  const handlePomodoroBreakComplete = useCallback(async () => {
-    void playComplete();
+  const handlePomodoroBreakComplete = useCallback(async (shouldPlayEffects: boolean) => {
+    if (shouldPlayEffects && isCurrentItemScreenRef.current) {
+      void playComplete();
+    }
   }, [playComplete]);
 
   const handlePomodoroStop = useCallback(async (elapsedSeconds: number) => {
@@ -305,7 +338,11 @@ export default function ItemDetailScreen() {
     onBreakComplete: handlePomodoroBreakComplete,
     onStop: handlePomodoroStop,
     autoSwitchBreak,
+    workDurationSeconds: pomodoroWorkSeconds,
+    breakDurationSeconds: pomodoroBreakSeconds,
+    enableInAppEffects: isCurrentItemScreen && appState === "active",
     storageKey: id ? `pomodoro_state_${id}` : null,
+    ready: !pomodoroSettingsLoading,
   });
 
   useEffect(() => {
@@ -318,29 +355,43 @@ export default function ItemDetailScreen() {
     if (!id || !item) return;
 
     const syncPomodoroNotifications = async () => {
-      if (!notificationSettings.enabled || !pomodoroTimer.state.isRunning || pomodoroTimer.state.phase === "idle") {
-        await cancelPomodoroNotifications(id);
+      if (pomodoroSettingsLoading) {
         return;
       }
 
+      if (
+          !notificationSettings.enabled ||
+          !pomodoroTimer.state.isRunning ||
+          pomodoroTimer.state.phase === "idle" ||
+          !pomodoroTimer.phaseEndsAt
+        ) {
+          await cancelPomodoroNotifications(id);
+          return;
+      }
+
       await schedulePomodoroPhaseNotifications(
-        id,
-        item.name,
-        pomodoroTimer.state.phase,
-        pomodoroTimer.state.timeLeft,
-        autoSwitchBreak
+          id,
+          item.name,
+          pomodoroTimer.state.phase,
+          pomodoroTimer.phaseEndsAt,
+          autoSwitchBreak,
+          pomodoroBreakSeconds,
+          pomodoroWorkSeconds
       );
     };
 
     void syncPomodoroNotifications();
   }, [
     id,
-    item,
-    notificationSettings.enabled,
-    pomodoroTimer.state.isRunning,
-    pomodoroTimer.state.phase,
-    pomodoroTimer.state.timeLeft,
-    autoSwitchBreak,
+      item?.name,
+      notificationSettings.enabled,
+      pomodoroSettingsLoading,
+      pomodoroTimer.state.isRunning,
+      pomodoroTimer.state.phase,
+      pomodoroTimer.phaseEndsAt,
+      autoSwitchBreak,
+    pomodoroBreakSeconds,
+    pomodoroWorkSeconds,
   ]);
 
   // 繧ｫ繧ｦ繝ｳ繧ｿ繝ｼ迥ｶ諷・
@@ -391,16 +442,34 @@ export default function ItemDetailScreen() {
           timerStartRef.current = parsed.startAt;
           setIsRunning(true);
           syncElapsed();
+          if (
+            item &&
+            notificationSettings.enabled &&
+            (!isCurrentItemScreenRef.current || AppState.currentState !== "active")
+          ) {
+            void scheduleLongSessionReminder(id, item.name, parsed.startAt);
+          }
         }
       } catch (error) {
         console.error("Failed to load timer state:", error);
       }
     };
     loadTimerState();
-  }, [TIMER_STATE_KEY, id, syncElapsed]);
+  }, [TIMER_STATE_KEY, id, item, notificationSettings.enabled, syncElapsed]);
+
+  useEffect(() => {
+    if (!id || !item || showPomodoroMode || !isRunning) return;
+
+    if (notificationSettings.enabled && timerStartRef.current && (!isCurrentItemScreen || appState !== "active")) {
+      void scheduleLongSessionReminder(id, item.name, timerStartRef.current);
+    } else {
+      void cancelLongSessionReminder(id);
+    }
+  }, [id, item, showPomodoroMode, isRunning, notificationSettings.enabled, isCurrentItemScreen, appState]);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
+      setAppState(state);
       if (state === "active" && isRunning) {
         syncElapsed();
       }
@@ -413,6 +482,14 @@ export default function ItemDetailScreen() {
     timerStartRef.current = now;
     setIsRunning(true);
     void playStart();
+    if (
+      id &&
+      item &&
+      notificationSettings.enabled &&
+      (!isCurrentItemScreenRef.current || AppState.currentState !== "active")
+    ) {
+      void scheduleLongSessionReminder(id, item.name, now);
+    }
     if (TIMER_STATE_KEY) {
       await AsyncStorage.setItem(TIMER_STATE_KEY, JSON.stringify({ startAt: now }));
     }
@@ -434,6 +511,7 @@ export default function ItemDetailScreen() {
       if (TIMER_STATE_KEY) {
         await AsyncStorage.removeItem(TIMER_STATE_KEY);
       }
+      await cancelLongSessionReminder(id);
       if (note) setSessionNote("");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       void playStop();
@@ -445,6 +523,9 @@ export default function ItemDetailScreen() {
     timerStartRef.current = null;
     if (TIMER_STATE_KEY) {
       await AsyncStorage.removeItem(TIMER_STATE_KEY);
+    }
+    if (id) {
+      await cancelLongSessionReminder(id);
     }
     void playClick();
   };
@@ -512,6 +593,20 @@ export default function ItemDetailScreen() {
     }
   }, [adjustDate, scrollToAdjust]);
 
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener("keyboardDidShow", () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideSubscription = Keyboard.addListener("keyboardDidHide", () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
   if (loading || !item) {
     return (
       <ThemedView style={[styles.container, styles.center]}>
@@ -528,8 +623,12 @@ export default function ItemDetailScreen() {
   const goalDaysRemaining = goalDeadline
     ? calculateDaysRemaining(goalDeadline)
     : null;
+  const goalDaysUntilDeadline = goalDeadline
+    ? calculateDaysUntilDate(goalDeadline)
+    : null;
+  const goalDeadlineHasPassed = goalDaysUntilDeadline !== null && goalDaysUntilDeadline < 0;
   const goalTodayTarget =
-    goalTarget && goalDaysRemaining !== null
+    goalTarget && goalDaysRemaining !== null && !goalDeadlineHasPassed
       ? Math.ceil(goalRemaining / Math.max(goalDaysRemaining, 1))
       : null;
 
@@ -620,19 +719,39 @@ export default function ItemDetailScreen() {
       </View>
 
       {/* 繝｡繧､繝ｳ繧ｳ繝ｳ繝・Φ繝・*/}
-      <ScrollView ref={scrollRef} style={styles.mainContent} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoider}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Math.max(insets.top, 20)}
+      >
+      <ScrollView
+        ref={scrollRef}
+        style={styles.mainContent}
+        contentContainerStyle={[
+          styles.mainContentInner,
+          {
+            paddingBottom: isKeyboardVisible
+              ? Math.max(insets.bottom, 20) + 96
+              : Math.max(insets.bottom, 20) + Spacing.l,
+          },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
 
 
         {/* 繧ｿ繧､繝槭・/繧ｫ繧ｦ繝ｳ繧ｿ繝ｼ */}
         {item.type === "time" ? (
-          <View style={styles.timerSection}>
+          <View style={[styles.sectionBlock, styles.timerSection, { borderTopColor: colors.border }]}>
             <View style={styles.timerHeaderRow}>
               <View>
                 <ThemedText type="subtitle">
                   {showPomodoroMode ? "ポモドーロ" : "通常タイマー"}
                 </ThemedText>
                 <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-                  {showPomodoroMode ? "25分集中 + 5分休憩" : "経過時間をそのまま積み上げ"}
+                  {showPomodoroMode
+                    ? `${pomodoroWorkLabel}集中 + ${pomodoroBreakLabel}休憩`
+                    : "経過時間をそのまま積み上げ"}
                 </ThemedText>
               </View>
               <Pressable
@@ -667,24 +786,7 @@ export default function ItemDetailScreen() {
               </Pressable>
             </View>
 
-            {(isRunning || pomodoroTimer.state.phase !== "idle") ? (
-              <View style={[styles.activeSessionCard, { backgroundColor: item.color + "15" }]}>
-                <View style={[styles.activeDot, { backgroundColor: item.color }]} />
-                <View style={{ flex: 1 }}>
-                  <ThemedText type="defaultSemiBold">{item.name} を積み上げ中</ThemedText>
-                  <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-                    {showPomodoroMode
-                      ? `経過 ${pomodoroTimer.formatTime(
-                          pomodoroTimer.state.totalTime - pomodoroTimer.state.timeLeft
-                        )}`
-                      : `経過 ${formatTimeDetailed(elapsedSeconds)}`}
-                  </ThemedText>
-                </View>
-                <IconSymbol name="bell.badge.fill" size={18} color={item.color} />
-              </View>
-            ) : null}
-
-            {!showPomodoroMode ? (
+              {!showPomodoroMode ? (
               <>
                 <Animated.View style={animatedStyle}>
                   <View
@@ -750,7 +852,7 @@ export default function ItemDetailScreen() {
 
                 <View style={[styles.pomodoroOptions, { backgroundColor: colors.card }]}>
                   <ThemedText style={{ color: colors.textSecondary }}>
-                    休憩自動切替
+                    自動切り替え
                   </ThemedText>
                   <Switch
                     value={autoSwitchBreak}
@@ -770,10 +872,8 @@ export default function ItemDetailScreen() {
                     <Pressable
                       style={[styles.mainButton, { backgroundColor: item.color }]}
                       onPress={async () => {
-                        if (
-                          pomodoroTimer.state.phase !== "idle" &&
-                          pomodoroTimer.state.timeLeft < pomodoroTimer.state.totalTime
-                        ) {
+                        await ensurePomodoroNotificationsReady();
+                        if (pomodoroTimer.state.phase !== "idle") {
                           pomodoroTimer.resumePomodoro();
                         } else {
                           pomodoroTimer.startPomodoro();
@@ -783,10 +883,12 @@ export default function ItemDetailScreen() {
                     >
                       <IconSymbol name="play.fill" size={28} color="#fff" />
                       <ThemedText style={styles.buttonText}>
-                        {pomodoroTimer.state.phase !== "idle" &&
-                        pomodoroTimer.state.timeLeft < pomodoroTimer.state.totalTime
-                          ? "再開"
-                          : "開始"}
+                        {pomodoroTimer.state.phase === "idle"
+                          ? "開始"
+                          : pomodoroTimer.state.phase === "break" &&
+                              pomodoroTimer.state.timeLeft === pomodoroTimer.state.totalTime
+                            ? "休憩開始"
+                            : "再開"}
                       </ThemedText>
                     </Pressable>
                   ) : (
@@ -806,33 +908,24 @@ export default function ItemDetailScreen() {
                     style={[styles.secondaryButton, { borderColor: colors.border }]}
                       onPress={async () => {
                         stopAllSounds();
-                        pomodoroTimer.stopPomodoro();
-                        setShowPomodoroMode(false);
-                        void playBeep();
-                      }}
+                          if (id) {
+                            await cancelPomodoroNotifications(id);
+                          }
+                          pomodoroTimer.stopPomodoro();
+                          void playBeep();
+                        }}
                   >
                     <ThemedText style={{ color: colors.textSecondary }}>
                       終了
                     </ThemedText>
                   </Pressable>
 
-                  {pomodoroTimer.state.phase !== "idle" ? (
-                    <Pressable
-                      style={[styles.secondaryButton, { borderColor: colors.tint }]}
-                      onPress={async () => {
-                        pomodoroTimer.skipPhase();
-                        void playClick();
-                      }}
-                    >
-                      <ThemedText style={{ color: colors.tint }}>次へ</ThemedText>
-                    </Pressable>
-                  ) : null}
                 </View>
               </>
             )}
           </View>
         ) : (
-          <View style={styles.counterSection}>
+          <View style={[styles.sectionBlock, styles.counterSection, { borderTopColor: colors.border }]}>
             <Animated.View style={animatedStyle}>
               <Pressable
                 style={[styles.counterButton, { backgroundColor: item.color }]}
@@ -873,7 +966,7 @@ export default function ItemDetailScreen() {
 
         {/* 作業ログメモ */}
         {item.type === "time" && (
-          <View style={styles.memoSection}>
+          <View style={[styles.sectionBlock, styles.memoSection, { borderTopColor: colors.border }]}>
             {renderSectionHeader("作業ログメモ")}
             <TextInput
               style={[styles.memoInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
@@ -890,7 +983,7 @@ export default function ItemDetailScreen() {
         )}
 
         {/* 邏ｯ險郁｡ｨ遉ｺ */}
-        <View style={styles.totalSection}>
+        <View style={[styles.sectionBlock, styles.totalSection, { borderTopColor: colors.border }]}>
           <ThemedText style={{ color: colors.textSecondary }}>合計</ThemedText>
           <ThemedText type="title" style={[styles.totalValue, { color: item.color }]}>
             {item.type === "time"
@@ -913,11 +1006,15 @@ export default function ItemDetailScreen() {
                 <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
                   期限: {goalDeadline}
                 </ThemedText>
-                {goalDaysRemaining !== null && (
+                {goalDeadlineHasPassed ? (
+                  <ThemedText style={{ fontSize: 12, color: colors.error }}>
+                    期限が過ぎています。
+                  </ThemedText>
+                ) : goalDaysRemaining !== null ? (
                   <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
                     残り日数: {goalDaysRemaining}日
                   </ThemedText>
-                )}
+                ) : null}
               </View>
 
               <View style={styles.goalItem}>
@@ -957,7 +1054,7 @@ export default function ItemDetailScreen() {
         </View>
 
         {/* リマインダー */}
-        <View style={styles.reminderSection}>
+        <View style={[styles.sectionBlock, styles.reminderSection, { borderTopColor: colors.border }]}>
           {renderSectionHeader(
             "リマインダー",
             "通知を5件まで追加できます。"
@@ -1058,7 +1155,7 @@ export default function ItemDetailScreen() {
         </View>
 
         {/* 今日のメモ */}
-        <View style={styles.memoSection}>
+        <View style={[styles.sectionBlock, styles.memoSection, { borderTopColor: colors.border }]}>
           {renderSectionHeader("メモ", "入力されると自動で保存されます。")}
           <TextInput
             style={[styles.memoInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
@@ -1071,7 +1168,7 @@ export default function ItemDetailScreen() {
         </View>
 
         {/* 作業ログ */}
-        <View style={styles.notesSection}>
+        <View style={[styles.sectionBlock, styles.notesSection, { borderTopColor: colors.border }]}>
           <ThemedText type="subtitle" style={{ marginBottom: Spacing.s }}>
             作業ログ
           </ThemedText>
@@ -1092,7 +1189,7 @@ export default function ItemDetailScreen() {
         </View>
 
         {/* 險倬鹸荳隕ｧ */}
-        <View style={styles.recordsSection}>
+        <View style={[styles.sectionBlock, styles.recordsSection, { borderTopColor: colors.border }]}>
           {renderSectionHeader(
             "最近の記録",
             "各日をタップすれば後から時間の調整ができます。"
@@ -1121,7 +1218,15 @@ export default function ItemDetailScreen() {
                 </Pressable>
               </View>
               {item.type === "time" ? (
-                <TimeInput value={adjustSeconds} onChange={setAdjustSeconds} />
+                <TimeInput
+                  value={adjustSeconds}
+                  onChange={setAdjustSeconds}
+                  onFocus={() => {
+                    setTimeout(() => {
+                      scrollToAdjust();
+                    }, 80);
+                  }}
+                />
               ) : (
                 <View style={styles.adjustCountRow}>
                   <Pressable
@@ -1185,6 +1290,7 @@ export default function ItemDetailScreen() {
           )}
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </ThemedView>
   );
 }
@@ -1216,6 +1322,16 @@ const styles = StyleSheet.create({
   mainContent: {
     flex: 1,
     paddingHorizontal: Spacing.m,
+  },
+  keyboardAvoider: {
+    flex: 1,
+  },
+  mainContentInner: {
+    paddingBottom: Spacing.xl,
+  },
+  sectionBlock: {
+    borderTopWidth: 1,
+    paddingTop: Spacing.l,
   },
   totalSection: {
     marginBottom: Spacing.xl,
@@ -1416,19 +1532,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.s,
     borderRadius: BorderRadius.button,
     borderWidth: 1,
-  },
-  activeSessionCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.s,
-    padding: Spacing.m,
-    borderRadius: BorderRadius.card,
-    marginBottom: Spacing.m,
-  },
-  activeDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
   },
   timerCircle: {
     alignSelf: "center",

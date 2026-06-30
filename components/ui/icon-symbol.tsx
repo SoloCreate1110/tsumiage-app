@@ -25,6 +25,7 @@ const MAPPING = {
   "play.fill": "play-arrow",
   "stop.fill": "stop",
   "pause.fill": "pause",
+  "speaker.wave.2.fill": "volume-up",
   "plus.circle.fill": "add-circle",
   "minus.circle.fill": "remove-circle",
   "trash.fill": "delete",

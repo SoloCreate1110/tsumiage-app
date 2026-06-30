@@ -1,4 +1,4 @@
-﻿import { useMemo, useRef, useCallback, useEffect } from "react";
+import { useMemo, useRef, useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
@@ -9,15 +9,26 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
-import { getTodayDate, toDateString } from "@/types/stack";
+import {
+  formatCount,
+  formatDate,
+  formatTime,
+  getCountUnitLabel,
+  getTodayDate,
+  toDateString,
+} from "@/types/stack";
 import { shareView } from "@/utils/share";
 
 export default function CalendarScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
-  const { records, loading, reload } = useStackStorage();
+  const { items, records, loading, reload } = useStackStorage();
   const viewRef = useRef<View>(null);
+  const [selectedItemId, setSelectedItemId] = useState<string>("all");
+  const [selectorOpen, setSelectorOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
   const normalizeRecordDate = (value: string) => {
     if (!value) return value;
     if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -28,6 +39,7 @@ export default function CalendarScreen() {
     if (!Number.isNaN(parsed.getTime())) return toDateString(parsed);
     return value;
   };
+
   const handleShare = async () => {
     await shareView(viewRef);
   };
@@ -42,29 +54,33 @@ export default function CalendarScreen() {
     reload();
   }, [records.length, reload]);
 
-  // ... (keep heatmapData calculation) ...
+  const selectedItem = useMemo(
+    () => items.find((item) => item.id === selectedItemId),
+    [items, selectedItemId]
+  );
 
-  // 繝偵・繝医・繝・・逕ｨ縺ｮ繝・・繧ｿ繧堤函謌撰ｼ磯℃蜴ｻ20騾ｱ髢灘・・・
+  const selectedRecords = useMemo(() => {
+    if (selectedItemId === "all") return records;
+    return records.filter((record) => record.itemId === selectedItemId);
+  }, [records, selectedItemId]);
+
   const heatmapData = useMemo(() => {
     const today = getTodayDate();
     const weeks = 20;
     const daysToLoad = weeks * 7;
     const data = [];
 
-    // 記録日ごとの件数を集計
     const activityMap = new Map<string, number>();
-    records.forEach((r) => {
-      const key = normalizeRecordDate(r.date);
+    selectedRecords.forEach((record) => {
+      const key = normalizeRecordDate(record.date);
       const count = activityMap.get(key) || 0;
       activityMap.set(key, count + 1);
     });
 
-    // 右端が「今日」、列は週単位（上から日〜土）で揃える
-    const dayOfWeek = today.getDay(); // 0:日
+    const dayOfWeek = today.getDay();
     const startDate = new Date(today);
     startDate.setDate(today.getDate() - dayOfWeek - (weeks - 1) * 7);
 
-    // 日付ごとにレベルを算出
     for (let i = 0; i < daysToLoad; i++) {
       const d = new Date(startDate);
       d.setDate(startDate.getDate() + i);
@@ -83,14 +99,13 @@ export default function CalendarScreen() {
         date: dateStr,
         dateObj: d,
         count,
-        level
+        level,
       });
     }
 
     return data;
-  }, [records]);
+  }, [selectedRecords]);
 
-  // 日莉倥ョ繝ｼ繧ｿ繧帝ｱ縺斐→縺ｮ驟榊・縺ｫ螟画鋤 [騾ｱ髢転[譖懈律]
   const weeksData = useMemo(() => {
     const weeks = [];
     let currentWeek = [];
@@ -109,33 +124,58 @@ export default function CalendarScreen() {
   }, [heatmapData]);
 
   const getLevelColor = (level: number) => {
-    // 邱醍ｳｻ縺ｮ濶ｲ・郁拷・・
-    if (colorScheme === 'dark') {
+    if (colorScheme === "dark") {
       switch (level) {
-        case 1: return "#0E4429";
-        case 2: return "#006D32";
-        case 3: return "#26A641";
-        case 4: return "#39D353";
-        default: return "#161B22";
+        case 1:
+          return "#0E4429";
+        case 2:
+          return "#006D32";
+        case 3:
+          return "#26A641";
+        case 4:
+          return "#39D353";
+        default:
+          return "#161B22";
       }
-    } else {
-      switch (level) {
-        case 1: return "#9BE9A8";
-        case 2: return "#40C463";
-        case 3: return "#30A14E";
-        case 4: return "#216E39";
-        default: return "#EBEDF0";
-      }
+    }
+
+    switch (level) {
+      case 1:
+        return "#9BE9A8";
+      case 2:
+        return "#40C463";
+      case 3:
+        return "#30A14E";
+      case 4:
+        return "#216E39";
+      default:
+        return "#EBEDF0";
     }
   };
 
-  const remainingWeeks = useMemo(() => {
-    const today = getTodayDate();
-    const endOfYear = new Date(today.getFullYear(), 11, 31, 23, 59, 59, 999);
-    const diffMs = endOfYear.getTime() - today.getTime();
-    const weeks = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24 * 7)));
-    return weeks;
-  }, []);
+  const selectedDateSummary = useMemo(() => {
+    if (!selectedDate) return [];
+    const itemMap = new Map(items.map((item) => [item.id, item]));
+    const dayRecords = selectedRecords.filter(
+      (record) => normalizeRecordDate(record.date) === selectedDate
+    );
+    const grouped = new Map<string, { value: number; records: number }>();
+
+    dayRecords.forEach((record) => {
+      const current = grouped.get(record.itemId) ?? { value: 0, records: 0 };
+      grouped.set(record.itemId, {
+        value: current.value + record.value,
+        records: current.records + 1,
+      });
+    });
+
+    return [...grouped.entries()]
+      .map(([itemId, summary]) => ({
+        item: itemMap.get(itemId),
+        ...summary,
+      }))
+      .filter((entry) => entry.item);
+  }, [items, selectedDate, selectedRecords]);
 
   if (loading) {
     return (
@@ -154,12 +194,11 @@ export default function CalendarScreen() {
         },
       ]}
     >
-      {/* ヘッダー（固定） */}
       <View style={styles.header}>
         <View>
           <ThemedText type="title">活動記録</ThemedText>
           <ThemedText style={{ color: colors.textSecondary }}>
-            日々の積み上げを可視化しましょう
+            {selectedItem ? `${selectedItem.name}の積み上げ` : "日々の積み上げを可視化しましょう"}
           </ThemedText>
         </View>
         <Pressable onPress={handleShare} style={{ padding: Spacing.s }}>
@@ -167,16 +206,72 @@ export default function CalendarScreen() {
         </Pressable>
       </View>
 
-      {/* 繧ｭ繝｣繝励メ繝｣蟇ｾ雎｡ */}
       <View
         ref={viewRef}
         collapsable={false}
-        style={{ flex: 1, backgroundColor: colors.background }} // 閭梧勹濶ｲ繧呈欠螳壹＠縺ｪ縺・→騾城℃縺ｫ縺ｪ繧句庄閭ｽ諤ｧ
+        style={{ flex: 1, backgroundColor: colors.background }}
       >
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-        >
-          {/* 繝偵・繝医・繝・・繧ｳ繝ｳ繝・リ */}
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={styles.selectorContainer}>
+            <ThemedText style={[styles.selectorLabel, { color: colors.textSecondary }]}>
+              表示対象
+            </ThemedText>
+            <Pressable
+              onPress={() => setSelectorOpen((open) => !open)}
+              style={[
+                styles.selectorButton,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <ThemedText style={styles.selectorText} numberOfLines={1}>
+                {selectedItem?.name ?? "全ての統計"}
+              </ThemedText>
+              <IconSymbol
+                name={selectorOpen ? "chevron.up" : "chevron.down"}
+                size={22}
+                color={colors.textSecondary}
+              />
+            </Pressable>
+            {selectorOpen && (
+              <View style={[styles.selectorMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Pressable
+                  onPress={() => {
+                    setSelectedItemId("all");
+                    setSelectedDate(null);
+                    setSelectorOpen(false);
+                  }}
+                  style={[
+                    styles.selectorOption,
+                    selectedItemId === "all" && { backgroundColor: colors.tint + "18" },
+                  ]}
+                >
+                  <ThemedText style={{ color: selectedItemId === "all" ? colors.tint : colors.text }}>
+                    全ての統計
+                  </ThemedText>
+                </Pressable>
+                {items.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => {
+                      setSelectedItemId(item.id);
+                      setSelectedDate(null);
+                      setSelectorOpen(false);
+                    }}
+                    style={[
+                      styles.selectorOption,
+                      selectedItemId === item.id && { backgroundColor: item.color + "18" },
+                    ]}
+                  >
+                    <View style={[styles.optionDot, { backgroundColor: item.color }]} />
+                    <ThemedText style={{ color: selectedItemId === item.id ? item.color : colors.text }}>
+                      {item.name}
+                    </ThemedText>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </View>
+
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -184,25 +279,27 @@ export default function CalendarScreen() {
             contentContainerStyle={styles.heatmapContent}
           >
             <View style={styles.heatmapGrid}>
-              {/* 曜日ラベル（日〜土） */}
               <View style={styles.dayLabels}>
-                {["日", "月", "火", "水", "木", "金", "土"].map((d) => (
-                  <ThemedText key={d} style={styles.dayLabel}>
-                    {d}
+                {["日", "月", "火", "水", "木", "金", "土"].map((day) => (
+                  <ThemedText key={day} style={styles.dayLabel}>
+                    {day}
                   </ThemedText>
                 ))}
               </View>
 
-              {/* 繧ｰ繝ｪ繝・ラ譛ｬ菴・*/}
               <View style={styles.weeksContainer}>
-                {weeksData.map((week, wIndex) => (
-                  <View key={wIndex} style={styles.weekColumn}>
-                    {week.map((day, dIndex) => (
-                      <View
+                {weeksData.map((week, weekIndex) => (
+                  <View key={weekIndex} style={styles.weekColumn}>
+                    {week.map((day) => (
+                      <Pressable
                         key={day.date}
+                        onPress={() => setSelectedDate(day.count > 0 ? day.date : null)}
                         style={[
                           styles.cell,
-                          { backgroundColor: getLevelColor(day.level) }
+                          {
+                            backgroundColor: getLevelColor(day.level),
+                            borderColor: selectedDate === day.date ? colors.tint : "transparent",
+                          },
                         ]}
                       />
                     ))}
@@ -212,30 +309,74 @@ export default function CalendarScreen() {
             </View>
           </ScrollView>
 
-          {/* 蜃｡萓・*/}
           <View style={styles.legendContainer}>
-            <ThemedText style={{ fontSize: 12, color: colors.textSecondary, marginRight: 8 }}>少</ThemedText>
-            {[0, 1, 2, 3, 4].map(level => (
+            <ThemedText style={{ fontSize: 12, color: colors.textSecondary, marginRight: 8 }}>
+              少
+            </ThemedText>
+            {[0, 1, 2, 3, 4].map((level) => (
               <View
                 key={level}
                 style={[styles.legendCell, { backgroundColor: getLevelColor(level) }]}
               />
             ))}
-            <ThemedText style={{ fontSize: 12, color: colors.textSecondary, marginLeft: 8 }}>多</ThemedText>
+            <ThemedText style={{ fontSize: 12, color: colors.textSecondary, marginLeft: 8 }}>
+              多
+            </ThemedText>
           </View>
-          <ThemedText style={styles.cutoffNote}>
-            ※ 日付は朝6時に切り替わります
-          </ThemedText>
-          <ThemedText style={styles.remainingWeeks}>
-            今年の残り {remainingWeeks}週
-          </ThemedText>
+          <ThemedText style={styles.cutoffNote}>※ 日付は朝5時に切り替わります</ThemedText>
+
+          {selectedDate && (
+            <View style={styles.dayDetailContainer}>
+              <ThemedText type="subtitle" style={{ marginBottom: Spacing.m }}>
+                {formatDate(selectedDate)}の記録
+              </ThemedText>
+              {selectedDateSummary.length > 0 ? (
+                selectedDateSummary.map(({ item, value, records: recordCount }) => {
+                  if (!item) return null;
+                  const displayValue =
+                    item.type === "time"
+                      ? formatTime(value)
+                      : formatCount(value, getCountUnitLabel(item));
+                  return (
+                    <View
+                      key={item.id}
+                      style={[styles.dayDetailCard, { backgroundColor: colors.card }]}
+                    >
+                      <View style={[styles.detailIcon, { backgroundColor: item.color + "20" }]}>
+                        <IconSymbol name={item.icon as any} size={20} color={item.color} />
+                      </View>
+                      <View style={styles.detailText}>
+                        <ThemedText style={styles.detailName} numberOfLines={1}>
+                          {item.name}
+                        </ThemedText>
+                        <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+                          {recordCount}件
+                        </ThemedText>
+                      </View>
+                      <ThemedText type="subtitle" style={{ color: item.color }}>
+                        {displayValue}
+                      </ThemedText>
+                    </View>
+                  );
+                })
+              ) : (
+                <View style={[styles.dayDetailCard, { backgroundColor: colors.card }]}>
+                  <ThemedText style={{ color: colors.textSecondary }}>
+                    この日の記録はありません
+                  </ThemedText>
+                </View>
+              )}
+            </View>
+          )}
 
           <View style={styles.statsContainer}>
-            <ThemedText type="subtitle" style={{ marginBottom: Spacing.m }}>週間サマリー</ThemedText>
+            <ThemedText type="subtitle" style={{ marginBottom: Spacing.m }}>
+              週間サマリー
+            </ThemedText>
             <View style={[styles.statCard, { backgroundColor: colors.card }]}>
               <ThemedText style={{ color: colors.textSecondary }}>活動日数</ThemedText>
               <ThemedText type="title" style={{ color: colors.tint }}>
-                {heatmapData.filter(d => d.count > 0).length}日
+                {heatmapData.filter((day) => day.count > 0).length}日
               </ThemedText>
             </View>
           </View>
@@ -262,6 +403,49 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  selectorContainer: {
+    paddingHorizontal: Spacing.m,
+    marginBottom: Spacing.s,
+  },
+  selectorLabel: {
+    fontSize: 12,
+    marginBottom: Spacing.xs,
+    fontWeight: "600",
+  },
+  selectorButton: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.button,
+    paddingHorizontal: Spacing.m,
+    paddingVertical: Spacing.s,
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  selectorText: {
+    flex: 1,
+    marginRight: Spacing.s,
+    fontWeight: "600",
+  },
+  selectorMenu: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.button,
+    marginTop: Spacing.xs,
+    overflow: "hidden",
+  },
+  selectorOption: {
+    minHeight: 44,
+    paddingHorizontal: Spacing.m,
+    paddingVertical: Spacing.s,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  optionDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: Spacing.s,
+  },
   heatmapScroll: {
     marginVertical: Spacing.m,
   },
@@ -269,10 +453,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.m,
   },
   heatmapGrid: {
-    flexDirection: 'row',
+    flexDirection: "row",
   },
   dayLabels: {
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
     marginRight: Spacing.s,
     paddingVertical: 2,
     height: (12 + 4) * 7,
@@ -284,7 +468,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   weeksContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 3,
   },
   weekColumn: {
@@ -294,11 +478,12 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 2,
+    borderWidth: 2,
   },
   legendContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
     paddingHorizontal: Spacing.m,
     marginBottom: Spacing.l,
   },
@@ -309,19 +494,37 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.l,
     textAlign: "right",
   },
-  remainingWeeks: {
-    fontSize: 12,
-    color: "#666",
-    paddingHorizontal: Spacing.m,
-    marginBottom: Spacing.l,
-    textAlign: "right",
-    fontWeight: "600",
-  },
   legendCell: {
     width: 12,
     height: 12,
     borderRadius: 2,
     marginHorizontal: 2,
+  },
+  dayDetailContainer: {
+    paddingHorizontal: Spacing.m,
+    marginBottom: Spacing.l,
+  },
+  dayDetailCard: {
+    padding: Spacing.m,
+    borderRadius: BorderRadius.card,
+    marginBottom: Spacing.s,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  detailIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: Spacing.s,
+  },
+  detailText: {
+    flex: 1,
+    marginRight: Spacing.s,
+  },
+  detailName: {
+    fontWeight: "600",
   },
   statsContainer: {
     paddingHorizontal: Spacing.m,
@@ -329,18 +532,6 @@ const styles = StyleSheet.create({
   statCard: {
     padding: Spacing.m,
     borderRadius: BorderRadius.card,
-    alignItems: 'center',
-  }
+    alignItems: "center",
+  },
 });
-
-
-
-
-
-
-
-
-
-
-
-

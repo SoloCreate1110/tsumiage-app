@@ -17,9 +17,59 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
-import { formatTimeDetailed, getTodayString, StackItem } from "@/types/stack";
+import { formatTimeDetailed, getTodayDate, getTodayString, StackItem } from "@/types/stack";
 import { useQuoteHistory } from "@/hooks/use-quote-history";
 import { useSound } from "@/hooks/use-sound";
+import { usePomodoroSettings } from "@/hooks/use-pomodoro-settings";
+
+type RunningSnapshot =
+  | {
+      type: "timer";
+      itemId: string;
+      startAt: number;
+    }
+  | {
+      type: "pomodoro";
+      itemId: string;
+      phase: "work" | "break";
+      phaseStartedAt: number;
+      totalTime: number;
+      timeLeft: number;
+      workDurationSeconds: number;
+      breakDurationSeconds: number;
+      autoSwitchBreak: boolean;
+    };
+
+type RunningCardState = {
+  label: string;
+  timeText: string;
+};
+
+function derivePomodoroCardState(snapshot: Extract<RunningSnapshot, { type: "pomodoro" }>, now: number): RunningCardState | null {
+  let phase = snapshot.phase;
+  let totalTime = Math.max(1, snapshot.totalTime);
+  let elapsed = Math.max(0, Math.floor((now - snapshot.phaseStartedAt) / 1000));
+
+  if (!snapshot.autoSwitchBreak && elapsed >= totalTime) {
+    return null;
+  }
+
+  while (snapshot.autoSwitchBreak && elapsed >= totalTime) {
+    elapsed -= totalTime;
+    if (phase === "work") {
+      phase = "break";
+      totalTime = Math.max(1, snapshot.breakDurationSeconds);
+    } else {
+      phase = "work";
+      totalTime = Math.max(1, snapshot.workDurationSeconds);
+    }
+  }
+
+  return {
+    label: phase === "work" ? "作業中" : "休憩中",
+    timeText: formatTimeDetailed(Math.max(0, totalTime - elapsed)),
+  };
+}
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
@@ -27,8 +77,12 @@ export default function HomeScreen() {
   const colors = Colors[colorScheme ?? "light"];
   const { items, loading, getTodayValue, calculateStreak, reorderItems, reload } = useStackStorage();
   const { playClick } = useSound();
+  const { settings: pomodoroSettings } = usePomodoroSettings();
+  const pomodoroWorkSeconds = pomodoroSettings.workMinutes * 60;
+  const pomodoroBreakSeconds = pomodoroSettings.breakMinutes * 60;
 
   const { ensureTodayQuote, todayQuote, initialized } = useQuoteHistory();
+  const [remainingUnit, setRemainingUnit] = useState<"weeks" | "days">("weeks");
 
   // getTodayValue縺ｮ繝｡繝｢蛹也沿繧剃ｽ懈・・医ヱ繝輔か繝ｼ繝槭Φ繧ｹ譛驕ｩ蛹厄ｼ・
   const memoizedGetTodayValue = useCallback(
@@ -63,22 +117,31 @@ export default function HomeScreen() {
   }, []);
 
   const streak = calculateStreak();
-  const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
-  const [runningSession, setRunningSession] = useState<{ itemId: string; startAt: number } | null>(null);
-  const [runningElapsedSeconds, setRunningElapsedSeconds] = useState(0);
+  const yearRemaining = useMemo(() => {
+    const today = getTodayDate();
+    const endOfYear = new Date(today.getFullYear(), 11, 31, 23, 59, 59, 999);
+    const diffDays = Math.max(
+      0,
+      Math.ceil((endOfYear.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    );
+    return {
+      days: diffDays,
+      weeks: Math.max(0, Math.ceil(diffDays / 7)),
+    };
+  }, []);
+  const [runningSnapshots, setRunningSnapshots] = useState<Record<string, RunningSnapshot>>({});
+  const [nowMs, setNowMs] = useState(Date.now());
 
   const refreshRunning = useCallback(async () => {
     if (items.length === 0) {
-      setRunningIds(new Set());
-      setRunningSession(null);
+      setRunningSnapshots({});
       return;
     }
     const timerKeys = items.map((i) => `timer_state_${i.id}`);
     const pomodoroKeys = items.map((i) => `pomodoro_state_${i.id}`);
     try {
       const pairs = await AsyncStorage.multiGet([...timerKeys, ...pomodoroKeys]);
-      const next = new Set<string>();
-      let activeSession: { itemId: string; startAt: number } | null = null;
+      const next: Record<string, RunningSnapshot> = {};
       pairs.forEach(([key, value]) => {
         if (!value) return;
         const isPomodoro = key.startsWith("pomodoro_state_");
@@ -87,22 +150,52 @@ export default function HomeScreen() {
           startAt?: number;
           phaseStartedAt?: number | null;
           isRunning?: boolean;
+          phase?: "work" | "break" | "idle";
+          timeLeft?: number;
+          totalTime?: number;
+          workDurationSeconds?: number;
+          breakDurationSeconds?: number;
         };
-        const startAt = isPomodoro ? parsed.phaseStartedAt : parsed.startAt;
         if (parsed?.isRunning === false) return;
-        if (startAt) {
-          next.add(id);
-          if (!activeSession || startAt < activeSession.startAt) {
-            activeSession = { itemId: id, startAt };
+        if (isPomodoro) {
+          const item = items.find((entry) => entry.id === id);
+          if (
+            parsed.phase !== "work" &&
+            parsed.phase !== "break"
+          ) {
+            return;
           }
+          if (!parsed.phaseStartedAt || !parsed.totalTime) return;
+          next[id] = {
+            type: "pomodoro",
+            itemId: id,
+            phase: parsed.phase,
+            phaseStartedAt: parsed.phaseStartedAt,
+            totalTime:
+              parsed.phase === "work"
+                ? pomodoroWorkSeconds
+                : pomodoroBreakSeconds,
+            timeLeft: parsed.timeLeft ?? parsed.totalTime,
+            workDurationSeconds: pomodoroWorkSeconds,
+            breakDurationSeconds: pomodoroBreakSeconds,
+            autoSwitchBreak: item?.pomodoroAutoSwitchBreak ?? true,
+          };
+          return;
+        }
+
+        if (parsed.startAt) {
+          next[id] = {
+            type: "timer",
+            itemId: id,
+            startAt: parsed.startAt,
+          };
         }
       });
-      setRunningIds(next);
-      setRunningSession(activeSession);
+      setRunningSnapshots(next);
     } catch (error) {
       console.error("Failed to load running timers:", error);
     }
-  }, [items]);
+  }, [items, pomodoroBreakSeconds, pomodoroWorkSeconds]);
 
   useEffect(() => {
     refreshRunning();
@@ -116,42 +209,58 @@ export default function HomeScreen() {
   }, [refreshRunning]);
 
   useEffect(() => {
-    if (!runningSession) {
-      setRunningElapsedSeconds(0);
-      return;
-    }
-
     const sync = () => {
-      setRunningElapsedSeconds(
-        Math.max(0, Math.floor((Date.now() - runningSession.startAt) / 1000))
-      );
+      setNowMs(Date.now());
     };
 
     sync();
     const intervalId = setInterval(sync, 1000);
     return () => clearInterval(intervalId);
-  }, [runningSession]);
+  }, []);
 
-  const runningItem = useMemo(
-    () => items.find((entry) => entry.id === runningSession?.itemId) ?? null,
-    [items, runningSession]
-  );
+  const runningCardStates = useMemo(() => {
+    const next: Record<string, RunningCardState> = {};
+    Object.values(runningSnapshots).forEach((snapshot) => {
+      if (snapshot.type === "timer") {
+        next[snapshot.itemId] = {
+          label: "作業中",
+          timeText: formatTimeDetailed(
+            Math.max(0, Math.floor((nowMs - snapshot.startAt) / 1000))
+          ),
+        };
+        return;
+      }
+
+      const cardState = derivePomodoroCardState(snapshot, nowMs);
+      if (cardState) {
+        next[snapshot.itemId] = cardState;
+      }
+    });
+    return next;
+  }, [nowMs, runningSnapshots]);
+
+  const runningIds = useMemo(() => new Set(Object.keys(runningCardStates)), [runningCardStates]);
 
   const renderItem = useCallback(
-    ({ item, drag, isActive }: RenderItemParams<StackItem>) => (
-      <StackItemCard
-        item={item}
-        todayValue={memoizedGetTodayValue(item.id)}
-        onPress={() => handleItemPress(item.id)}
-        onLongPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          drag();
-        }}
-        isActive={isActive}
-        isRunning={runningIds.has(item.id)}
-      />
-    ),
-    [memoizedGetTodayValue, handleItemPress, runningIds]
+    ({ item, drag, isActive }: RenderItemParams<StackItem>) => {
+      const runningState = runningCardStates[item.id];
+      return (
+        <StackItemCard
+          item={item}
+          todayValue={memoizedGetTodayValue(item.id)}
+          onPress={() => handleItemPress(item.id)}
+          onLongPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            drag();
+          }}
+          isActive={isActive}
+          isRunning={runningIds.has(item.id)}
+          runningLabel={runningState?.label}
+          runningTimeText={runningState?.timeText}
+        />
+      );
+    },
+    [memoizedGetTodayValue, handleItemPress, runningCardStates, runningIds]
   );
 
   if (loading) {
@@ -186,6 +295,22 @@ export default function HomeScreen() {
           </ThemedText>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: Spacing.s }}>
+          <Pressable
+            onPress={() =>
+              setRemainingUnit((unit) => (unit === "weeks" ? "days" : "weeks"))
+            }
+            style={[styles.remainingBadge, { backgroundColor: colors.card, borderColor: colors.border }]}
+          >
+            <ThemedText style={{ color: colors.textSecondary, fontSize: 10, marginBottom: -3 }}>
+              今年あと
+            </ThemedText>
+            <ThemedText style={{ color: colors.text, fontSize: 20, lineHeight: 24, fontWeight: "800" }}>
+              {remainingUnit === "weeks" ? yearRemaining.weeks : yearRemaining.days}
+            </ThemedText>
+            <ThemedText style={{ color: colors.textSecondary, fontSize: 10, marginTop: -4 }}>
+              {remainingUnit === "weeks" ? "週" : "日"}
+            </ThemedText>
+          </Pressable>
           <View style={[styles.streakBadge, { backgroundColor: colors.tint + "15" }]}>
             <IconSymbol name="flame.fill" size={16} color={colors.tint} />
             <ThemedText style={{ fontWeight: "bold", color: colors.tint, fontSize: 16 }}>
@@ -230,27 +355,6 @@ export default function HomeScreen() {
           </ThemedText>
         </View>
       </Pressable>
-
-      {runningItem ? (
-        <View
-          style={[
-            styles.liveBanner,
-            { backgroundColor: runningItem.color + "18", borderColor: runningItem.color + "55" },
-          ]}
-        >
-          <View style={[styles.liveDot, { backgroundColor: runningItem.color }]} />
-          <View style={{ flex: 1 }}>
-            <ThemedText type="defaultSemiBold">{runningItem.name} を積み上げ中</ThemedText>
-            <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-              経過 {formatTimeDetailed(runningElapsedSeconds)}
-            </ThemedText>
-          </View>
-          <Pressable onPress={() => handleItemPress(runningItem.id)}>
-            <ThemedText style={{ color: runningItem.color, fontWeight: "600" }}>開く</ThemedText>
-          </Pressable>
-        </View>
-      ) : null}
-
 
       {/* 鬆・岼荳隕ｧ */}
       <View style={styles.listWrapper}>
@@ -336,6 +440,14 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     borderWidth: 1,
     borderColor: "rgba(0,0,0,0.05)",
+  },
+  remainingBadge: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 1,
   },
   quoteContainer: {
     marginHorizontal: Spacing.m,

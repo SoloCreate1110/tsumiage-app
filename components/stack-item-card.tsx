@@ -14,6 +14,8 @@ interface StackItemCardProps {
   onLongPress?: () => void;
   isActive?: boolean;
   isRunning?: boolean;
+  runningLabel?: string;
+  runningTimeText?: string;
 }
 
 const StackItemCardComponent = ({
@@ -23,6 +25,8 @@ const StackItemCardComponent = ({
   onLongPress,
   isActive = false,
   isRunning = false,
+  runningLabel = "作業中",
+  runningTimeText,
 }: StackItemCardProps) => {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
@@ -68,7 +72,11 @@ const StackItemCardComponent = ({
 
   return (
     <Pressable onPress={onPress} onLongPress={onLongPress} disabled={!onPress}>
-      {({ pressed, hovered }) => (
+      {(state) => {
+        const { pressed } = state;
+        const hovered = "hovered" in state ? Boolean(state.hovered) : false;
+
+        return (
         <Animated.View
           style={[
             styles.card,
@@ -99,13 +107,16 @@ const StackItemCardComponent = ({
             />
           )}
           <View style={styles.topRow}>
-            <ThemedText type="title" style={{ fontSize: 32, lineHeight: 38, color: colors.text }}>
-              {todayDisplay}
-            </ThemedText>
-            <View style={styles.totalInfo}>
+            <View style={styles.primaryValueInfo}>
               <ThemedText style={[styles.totalLabel, { color: colors.textSecondary }]}>累計</ThemedText>
-              <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>
+              <ThemedText type="title" style={{ fontSize: 32, lineHeight: 38, color: colors.text }}>
                 {displayValue}
+              </ThemedText>
+            </View>
+            <View style={styles.totalInfo}>
+              <ThemedText style={[styles.totalLabel, { color: colors.textSecondary }]}>今日</ThemedText>
+              <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>
+                {todayDisplay}
               </ThemedText>
             </View>
           </View>
@@ -142,12 +153,20 @@ const StackItemCardComponent = ({
                     },
                   ]}
                 />
-                <ThemedText style={[styles.runningText, { color: item.color }]}>作業中</ThemedText>
+                {runningTimeText ? (
+                  <ThemedText style={[styles.runningTimeText, { color: item.color }]}>
+                    {runningTimeText}
+                  </ThemedText>
+                ) : null}
+                <ThemedText style={[styles.runningText, { color: item.color }]}>
+                  {runningLabel}
+                </ThemedText>
               </View>
             ) : null}
           </View>
         </Animated.View>
-      )}
+        );
+      }}
     </Pressable>
   );
 };
@@ -235,6 +254,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "600",
   },
+  runningTimeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
   totalLabel: {
     fontSize: 12,
     marginBottom: 4,
@@ -243,6 +267,10 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     justifyContent: "center",
     marginLeft: Spacing.m,
+  },
+  primaryValueInfo: {
+    flex: 1,
+    minWidth: 0,
   },
   reminderTimes: {
     fontSize: 11,

@@ -1,18 +1,32 @@
 ﻿import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import { useEffect, useState } from "react";
+import { isPomodoroItemScreenActive } from "@/lib/pomodoro-foreground-state";
 
 const isExpoGo =
   Constants.appOwnership === "expo" || Constants.executionEnvironment === "storeClient";
+const DAILY_REMINDER_NOTIFICATION_ID = "daily-reminder";
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  } as Notifications.NotificationBehavior),
+  handleNotification: async (notification) => {
+    const data = notification.request.content.data as { kind?: unknown; itemId?: unknown };
+    const activeTaskNotificationItemId =
+      (data.kind === "pomodoro" || data.kind === "long-session") &&
+      typeof data.itemId === "string"
+        ? data.itemId
+        : null;
+    const suppressOnActiveTask =
+      activeTaskNotificationItemId !== null &&
+      isPomodoroItemScreenActive(activeTaskNotificationItemId);
+
+    return {
+      shouldShowAlert: !suppressOnActiveTask,
+      shouldPlaySound: !suppressOnActiveTask,
+      shouldSetBadge: false,
+      shouldShowBanner: !suppressOnActiveTask,
+      shouldShowList: !suppressOnActiveTask,
+    } as Notifications.NotificationBehavior;
+  },
 });
 
 export function useNotification() {
@@ -52,9 +66,12 @@ export function useNotification() {
       if (!granted) return false;
     }
 
-    await Notifications.cancelAllScheduledNotificationsAsync();
+    await Notifications.cancelScheduledNotificationAsync(DAILY_REMINDER_NOTIFICATION_ID).catch(
+      () => undefined,
+    );
 
     await Notifications.scheduleNotificationAsync({
+      identifier: DAILY_REMINDER_NOTIFICATION_ID,
       content: {
         title: "積み上げの時間です！",
         body: "今日の積み上げを少しだけ進めましょう。",
@@ -74,7 +91,9 @@ export function useNotification() {
     if (isExpoGo) {
       return;
     }
-    await Notifications.cancelAllScheduledNotificationsAsync();
+    await Notifications.cancelScheduledNotificationAsync(DAILY_REMINDER_NOTIFICATION_ID).catch(
+      () => undefined,
+    );
   };
 
   return {

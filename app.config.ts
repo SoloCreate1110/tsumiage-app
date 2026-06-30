@@ -9,23 +9,24 @@ const bundleId = "space.manus.tsumage.app.t20251223162223";
 // e.g., "space.manus.my.app.t20240115103045" -> "manus20240115103045"
 const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
 const schemeFromBundleId = `manus${timestamp}`;
+const isDevelopmentBuild = process.env.EAS_BUILD_PROFILE === "development";
 
 const env = {
   // App branding - update these values directly (do not use env vars)
-  appName: "積み上げ",
+  appName: isDevelopmentBuild ? "積み上げ Dev" : "積み上げ",
   appSlug: "tsumage-app",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
   logoUrl: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663260772597/BJXdohEVphTpxTuG.png",
-  scheme: schemeFromBundleId,
-  iosBundleId: bundleId,
-  androidPackage: bundleId,
+  scheme: isDevelopmentBuild ? `${schemeFromBundleId}-dev` : schemeFromBundleId,
+  iosBundleId: isDevelopmentBuild ? `${bundleId}.dev` : bundleId,
+  androidPackage: isDevelopmentBuild ? `${bundleId}.dev` : bundleId,
 };
 
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
-  version: "1.2.0",
+  version: "1.3.3",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
@@ -48,7 +49,7 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS"],
+    permissions: ["POST_NOTIFICATIONS", "android.permission.SCHEDULE_EXACT_ALARM"],
     intentFilters: [
       {
         action: "VIEW",
@@ -81,12 +82,14 @@ const config: ExpoConfig = {
         },
       },
     ],
+    "./plugins/withNotificationChronometer.cjs",
   ],
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
   },
   extra: {
+    isDevelopmentBuild,
     eas: {
       projectId: "9a46088f-88a3-4fa5-a31f-8d55729af0fc",
     },

@@ -3,6 +3,7 @@ import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { useEffect, useState } from "react";
+import { isPomodoroItemScreenActive } from "@/lib/pomodoro-foreground-state";
 
 const NOTIFICATION_SETTINGS_KEY = "notification_settings";
 
@@ -11,20 +12,32 @@ export interface NotificationSettings {
 }
 
 const DEFAULT_SETTINGS: NotificationSettings = {
-  enabled: false,
+  enabled: true,
 };
 
 const isExpoGo = Constants.executionEnvironment === "storeClient";
 const notificationsUnsupported = isExpoGo || Platform.OS === "web";
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    const data = notification.request.content.data as { kind?: unknown; itemId?: unknown };
+    const activeTaskNotificationItemId =
+      (data.kind === "pomodoro" || data.kind === "long-session") &&
+      typeof data.itemId === "string"
+        ? data.itemId
+        : null;
+    const suppressOnActiveTask =
+      activeTaskNotificationItemId !== null &&
+      isPomodoroItemScreenActive(activeTaskNotificationItemId);
+
+    return {
+      shouldShowAlert: !suppressOnActiveTask,
+      shouldPlaySound: !suppressOnActiveTask,
+      shouldSetBadge: false,
+      shouldShowBanner: !suppressOnActiveTask,
+      shouldShowList: !suppressOnActiveTask,
+    };
+  },
 });
 
 export function useNotificationSettings() {
@@ -43,7 +56,7 @@ export function useNotificationSettings() {
       if (data) {
         const parsed = JSON.parse(data) as Partial<NotificationSettings>;
         setSettings({
-          enabled: parsed.enabled ?? false,
+          enabled: parsed.enabled ?? true,
         });
       }
     } catch (error) {

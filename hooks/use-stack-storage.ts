@@ -21,6 +21,7 @@ const RECORDS_KEY = "stack_records";
 const DAILY_NOTES_KEY = "stack_daily_notes";
 const DEFAULT_REMINDER_TIME = "20:00";
 const MAX_REMINDER_SLOTS = 5;
+const DAY_CUTOFF_HOUR = 5;
 
 const buildDefaultReminderSlots = (): ReminderSlot[] =>
   Array.from({ length: MAX_REMINDER_SLOTS }, (_, index) => ({
@@ -53,7 +54,7 @@ const normalizeRecordDate = (value: string, createdAt?: string): string => {
     const created = new Date(createdAt);
     if (!Number.isNaN(created.getTime())) {
       const adjusted = new Date(created);
-      if (adjusted.getHours() < 6) {
+      if (adjusted.getHours() < DAY_CUTOFF_HOUR) {
         adjusted.setDate(adjusted.getDate() - 1);
       }
       adjusted.setHours(0, 0, 0, 0);
