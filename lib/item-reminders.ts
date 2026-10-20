@@ -1,50 +1,52 @@
 import Constants from "expo-constants";
-import * as Notifications from "expo-notifications";
+import { loadNotifications } from "./notifications-runtime";
 import { Platform } from "react-native";
 
 import type { ReminderSlot, StackItem } from "@/types/stack";
 
-const ITEM_REMINDER_PREFIX = "item-reminder";
+const isExpoGo = Constants.executionEnvironment === "storeClient";
+const notificationsUnsupported = isExpoGo || Platform.OS === "web";
 
-export function notificationsAreUnsupported(): boolean {
-  return Platform.OS === "web" || Constants.executionEnvironment === "storeClient";
+export function notificationsAreUnsupported() {
+  return notificationsUnsupported;
 }
 
-function notificationId(itemId: string, slotId: string): string {
-  return `${ITEM_REMINDER_PREFIX}:${itemId}:${slotId}`;
-}
-
-export async function cancelItemReminders(itemId: string): Promise<void> {
-  if (notificationsAreUnsupported()) return;
+export async function cancelItemReminders(itemId: string) {
+  if (notificationsUnsupported) return;
+  const Notifications = await loadNotifications();
 
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
   await Promise.all(
     scheduled
-      .filter((notification) => notification.identifier.startsWith(`${ITEM_REMINDER_PREFIX}:${itemId}:`))
-      .map((notification) => Notifications.cancelScheduledNotificationAsync(notification.identifier))
+      .filter((notification) => {
+        const data = notification.content.data as { itemId?: string } | undefined;
+        return data?.itemId === itemId;
+      })
+      .map((notification) =>
+        Notifications.cancelScheduledNotificationAsync(notification.identifier)
+      )
   );
 }
 
 export async function scheduleItemReminders(
   itemId: string,
-  itemName: string,
-  reminderSlots: ReminderSlot[]
-): Promise<void> {
-  if (notificationsAreUnsupported()) return;
+  name: string,
+  slots: ReminderSlot[]
+) {
+  if (notificationsUnsupported) return false;
+  const Notifications = await loadNotifications();
 
   await cancelItemReminders(itemId);
+  const enabledSlots = slots.filter((slot) => slot.enabled);
 
-  const enabledSlots = reminderSlots.filter((slot) => slot.enabled);
   await Promise.all(
-    enabledSlots.map((slot) => {
-      const [hour, minute] = slot.time.split(":").map((value) => parseInt(value, 10));
-      if (Number.isNaN(hour) || Number.isNaN(minute)) return Promise.resolve();
-
-      return Notifications.scheduleNotificationAsync({
-        identifier: notificationId(itemId, slot.id),
+    enabledSlots.map(async (slot) => {
+      const [hour, minute] = slot.time.split(":").map(Number);
+      await Notifications.scheduleNotificationAsync({
         content: {
-          title: itemName,
-          body: "今日の積み上げを記録しましょう。",
+          title: `${name}の時間です`,
+          body: "今日の積み上げを少し進めましょう。",
+          data: { itemId, slotId: slot.id },
           sound: true,
         },
         trigger: {
@@ -55,21 +57,21 @@ export async function scheduleItemReminders(
       });
     })
   );
+
+  return true;
 }
 
-export async function syncAllItemReminders(items: StackItem[]): Promise<void> {
-  if (notificationsAreUnsupported()) return;
+export async function syncAllItemReminders(items: StackItem[]) {
+  if (notificationsUnsupported) return;
+  const Notifications = await loadNotifications();
 
-  await Promise.all(
-    items.map(async (item) => {
-      const visibleCount = Math.min(5, Math.max(1, item.reminderSlotCount ?? 1));
-      const visibleSlots = (item.reminderSlots ?? []).slice(0, visibleCount);
+  await Notifications.cancelAllScheduledNotificationsAsync();
 
-      if (visibleSlots.some((slot) => slot.enabled)) {
-        await scheduleItemReminders(item.id, item.name, visibleSlots);
-      } else {
-        await cancelItemReminders(item.id);
-      }
-    })
-  );
+  for (const item of items) {
+    const visibleCount = Math.min(5, Math.max(1, item.reminderSlotCount ?? 1));
+    const visibleSlots = (item.reminderSlots ?? []).slice(0, visibleCount);
+    const enabledSlots = visibleSlots.filter((slot) => slot.enabled);
+    if (enabledSlots.length === 0) continue;
+    await scheduleItemReminders(item.id, item.name, enabledSlots);
+  }
 }

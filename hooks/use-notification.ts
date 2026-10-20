@@ -1,33 +1,22 @@
-﻿import * as Notifications from "expo-notifications";
+﻿import type { NotificationBehavior } from "expo-notifications";
+import { loadNotifications } from "@/lib/notifications-runtime";
 import Constants from "expo-constants";
 import { useEffect, useState } from "react";
-import { isPomodoroItemScreenActive } from "@/lib/pomodoro-foreground-state";
+
+import { Platform } from "react-native";
 
 const isExpoGo =
-  Constants.appOwnership === "expo" || Constants.executionEnvironment === "storeClient";
-const DAILY_REMINDER_NOTIFICATION_ID = "daily-reminder";
+  Platform.OS === "web" || Constants.appOwnership === "expo" || Constants.executionEnvironment === "storeClient";
 
-Notifications.setNotificationHandler({
-  handleNotification: async (notification) => {
-    const data = notification.request.content.data as { kind?: unknown; itemId?: unknown };
-    const activeTaskNotificationItemId =
-      (data.kind === "pomodoro" || data.kind === "long-session") &&
-      typeof data.itemId === "string"
-        ? data.itemId
-        : null;
-    const suppressOnActiveTask =
-      activeTaskNotificationItemId !== null &&
-      isPomodoroItemScreenActive(activeTaskNotificationItemId);
-
-    return {
-      shouldShowAlert: !suppressOnActiveTask,
-      shouldPlaySound: !suppressOnActiveTask,
-      shouldSetBadge: false,
-      shouldShowBanner: !suppressOnActiveTask,
-      shouldShowList: !suppressOnActiveTask,
-    } as Notifications.NotificationBehavior;
-  },
-});
+if (!isExpoGo) void loadNotifications().then(Notifications => Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  } as NotificationBehavior),
+})).catch(error => console.error("Failed to initialize notifications:", error));
 
 export function useNotification() {
   const [enabled, setEnabled] = useState(false);
@@ -41,6 +30,7 @@ export function useNotification() {
       setEnabled(false);
       return;
     }
+    const Notifications = await loadNotifications();
     const settings = await Notifications.getPermissionsAsync();
     setEnabled(
       settings.granted ||
@@ -52,6 +42,7 @@ export function useNotification() {
     if (isExpoGo) {
       return false;
     }
+    const Notifications = await loadNotifications();
     const { status } = await Notifications.requestPermissionsAsync();
     setEnabled(status === "granted");
     return status === "granted";
@@ -66,12 +57,10 @@ export function useNotification() {
       if (!granted) return false;
     }
 
-    await Notifications.cancelScheduledNotificationAsync(DAILY_REMINDER_NOTIFICATION_ID).catch(
-      () => undefined,
-    );
+    const Notifications = await loadNotifications();
+    await Notifications.cancelAllScheduledNotificationsAsync();
 
     await Notifications.scheduleNotificationAsync({
-      identifier: DAILY_REMINDER_NOTIFICATION_ID,
       content: {
         title: "積み上げの時間です！",
         body: "今日の積み上げを少しだけ進めましょう。",
@@ -91,9 +80,8 @@ export function useNotification() {
     if (isExpoGo) {
       return;
     }
-    await Notifications.cancelScheduledNotificationAsync(DAILY_REMINDER_NOTIFICATION_ID).catch(
-      () => undefined,
-    );
+    const Notifications = await loadNotifications();
+    await Notifications.cancelAllScheduledNotificationsAsync();
   };
 
   return {

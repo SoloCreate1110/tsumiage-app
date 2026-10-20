@@ -37,6 +37,8 @@ export interface StackItem {
   totalValue: number;
   unitLabel?: string;
   pomodoroAutoSwitchBreak?: boolean;
+  pomodoroWorkMinutes?: number;
+  pomodoroBreakMinutes?: number;
   goal?: Goal;
   reminder?: ReminderSetting;
   reminderSlots?: ReminderSlot[];
@@ -162,13 +164,13 @@ export function formatDate(dateString: string): string {
   return dateString;
 }
 
-// Today string with cutoff hour (default 5:00)
-export function getTodayString(cutoffHour: number = 5): string {
+// Today string with cutoff hour (default 6:00)
+export function getTodayString(cutoffHour: number = 6): string {
   return toDateString(getTodayDate(cutoffHour));
 }
 
-// Today date with cutoff hour (default 5:00)
-export function getTodayDate(cutoffHour: number = 5): Date {
+// Today date with cutoff hour (default 6:00)
+export function getTodayDate(cutoffHour: number = 6): Date {
   const now = new Date();
   const local = new Date(now);
   if (local.getHours() < cutoffHour) {
@@ -186,7 +188,7 @@ export function toDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function parseDateString(dateString: string): Date {
+function parseDateOnly(dateString: string): Date {
   const [year, month, day] = dateString.split("-").map((part) => parseInt(part, 10));
   if (!Number.isNaN(year) && !Number.isNaN(month) && !Number.isNaN(day)) {
     return new Date(year, month - 1, day);
@@ -248,17 +250,18 @@ export function calculatePeriodTotal(
     .reduce((sum, r) => sum + r.value, 0);
 }
 
-// Days until target date. Negative means the deadline has passed.
-export function calculateDaysUntilDate(targetDate: string): number {
-  const target = parseDateString(targetDate);
+// Days remaining to target date
+export function calculateDaysRemaining(targetDate: string): number {
+  return Math.max(0, calculateDaysUntil(targetDate));
+}
+
+// Signed day difference to target date. Past dates return negative values.
+export function calculateDaysUntil(targetDate: string): number {
+  const target = parseDateOnly(targetDate);
   const today = getTodayDate();
   target.setHours(0, 0, 0, 0);
 
   const diffTime = target.getTime() - today.getTime();
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-}
-
-// Days remaining to target date
-export function calculateDaysRemaining(targetDate: string): number {
-  return Math.max(0, calculateDaysUntilDate(targetDate));
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays;
 }

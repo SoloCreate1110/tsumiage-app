@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { APP_ANNOUNCEMENTS } from "@/constants/announcements";
 
-const SEEN_ANNOUNCEMENT_IDS_KEY = "seen_announcement_ids";
+const SEEN_ANNOUNCEMENTS_KEY = "seen_announcements";
 
 export function useAnnouncements() {
   const [seenIds, setSeenIds] = useState<string[]>([]);
@@ -12,54 +12,63 @@ export function useAnnouncements() {
   useEffect(() => {
     const loadSeenIds = async () => {
       try {
-        const raw = await AsyncStorage.getItem(SEEN_ANNOUNCEMENT_IDS_KEY);
-        setSeenIds(raw ? JSON.parse(raw) : []);
+        const raw = await AsyncStorage.getItem(SEEN_ANNOUNCEMENTS_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setSeenIds(parsed.filter((id): id is string => typeof id === "string"));
+        }
       } catch (error) {
         console.error("Failed to load seen announcements:", error);
-        setSeenIds([]);
       } finally {
         setLoading(false);
       }
     };
 
-    void loadSeenIds();
+    loadSeenIds();
   }, []);
 
-  const persistSeenIds = useCallback(async (nextIds: string[]) => {
-    const uniqueIds = Array.from(new Set(nextIds));
-    setSeenIds(uniqueIds);
-    await AsyncStorage.setItem(SEEN_ANNOUNCEMENT_IDS_KEY, JSON.stringify(uniqueIds));
+  const markAsSeen = useCallback(async (id: string) => {
+    setSeenIds((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      AsyncStorage.setItem(SEEN_ANNOUNCEMENTS_KEY, JSON.stringify(next)).catch((error) => {
+        console.error("Failed to save seen announcements:", error);
+      });
+      return next;
+    });
   }, []);
 
-  const markAsSeen = useCallback(
-    async (id: string) => {
-      await persistSeenIds([...seenIds, id]);
-    },
-    [persistSeenIds, seenIds]
-  );
-
-  const markAllAsSeen = useCallback(async () => {
-    await persistSeenIds(APP_ANNOUNCEMENTS.map((announcement) => announcement.id));
-  }, [persistSeenIds]);
-
-  const unseenAnnouncements = useMemo(
-    () => APP_ANNOUNCEMENTS.filter((announcement) => !seenIds.includes(announcement.id)),
-    [seenIds]
-  );
+  const markLaunchAnnouncementAsSeen = useCallback(async (id: string) => {
+    setSeenIds((prev) => {
+      const next = Array.from(
+        new Set([
+          ...prev,
+          ...APP_ANNOUNCEMENTS.filter((announcement) => announcement.id !== id).map(
+            (announcement) => announcement.id
+          ),
+          id,
+        ])
+      );
+      AsyncStorage.setItem(SEEN_ANNOUNCEMENTS_KEY, JSON.stringify(next)).catch((error) => {
+        console.error("Failed to save seen announcements:", error);
+      });
+      return next;
+    });
+  }, []);
 
   const latestUnseen = useMemo(() => {
-    return [...unseenAnnouncements].sort((a, b) => {
-      const dateCompare = b.date.localeCompare(a.date);
-      if (dateCompare !== 0) return dateCompare;
-      return b.version.localeCompare(a.version);
-    })[0] ?? null;
-  }, [unseenAnnouncements]);
+    return APP_ANNOUNCEMENTS.find((announcement) => !seenIds.includes(announcement.id)) ?? null;
+  }, [seenIds]);
+
+  const announcements = APP_ANNOUNCEMENTS;
 
   return {
+    announcements,
     latestUnseen,
+    seenIds,
     loading,
     markAsSeen,
-    markAllAsSeen,
-    unseenAnnouncements,
+    markLaunchAnnouncementAsSeen,
   };
 }

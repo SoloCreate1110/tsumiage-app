@@ -4,34 +4,38 @@ import type { ExpoConfig } from "expo/config";
 
 // Bundle ID format: space.manus.<project_name_dots>.<timestamp>
 // e.g., "my-app" created at 2024-01-15 10:30:45 -> "space.manus.my.app.t20240115103045"
-const bundleId = "space.manus.tsumage.app.t20251223162223";
+const productionBundleId = "space.manus.tsumage.app.t20251223162223";
+const variant = process.env.APP_VARIANT ?? "development";
+if (variant !== "development" && variant !== "production") {
+  throw new Error(`Unsupported APP_VARIANT: ${variant}`);
+}
+const isDev = variant === "development";
+const bundleId = isDev ? `${productionBundleId}.dev` : productionBundleId;
 // Extract timestamp from bundle ID and prefix with "manus" for deep link scheme
 // e.g., "space.manus.my.app.t20240115103045" -> "manus20240115103045"
-const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
-const schemeFromBundleId = `manus${timestamp}`;
-const isDevelopmentBuild = process.env.EAS_BUILD_PROFILE === "development";
+const timestamp = productionBundleId.split(".").pop()?.replace(/^t/, "") ?? "";
+const schemeFromBundleId = `manus${timestamp}${isDev ? "dev" : ""}`;
 
 const env = {
   // App branding - update these values directly (do not use env vars)
-  appName: isDevelopmentBuild ? "積み上げ Dev" : "積み上げ",
+  appName: isDev ? "積み上げDev" : "積み上げ",
   appSlug: "tsumage-app",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
   logoUrl: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663260772597/BJXdohEVphTpxTuG.png",
-  scheme: isDevelopmentBuild ? `${schemeFromBundleId}-dev` : schemeFromBundleId,
-  iosBundleId: isDevelopmentBuild ? `${bundleId}.dev` : bundleId,
-  androidPackage: isDevelopmentBuild ? `${bundleId}.dev` : bundleId,
+  scheme: schemeFromBundleId,
+  iosBundleId: bundleId,
+  androidPackage: bundleId,
 };
 
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
-  version: "1.3.3",
+  version: "1.4.1",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
   userInterfaceStyle: "automatic",
-  newArchEnabled: true,
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
@@ -46,10 +50,9 @@ const config: ExpoConfig = {
       backgroundImage: "./assets/images/android-icon-background.png",
       monochromeImage: "./assets/images/android-icon-monochrome.png",
     },
-    edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS", "android.permission.SCHEDULE_EXACT_ALARM"],
+    permissions: ["POST_NOTIFICATIONS", "SCHEDULE_EXACT_ALARM"],
     intentFilters: [
       {
         action: "VIEW",
@@ -70,6 +73,8 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    "expo-notifications",
+    ["expo-dev-client", { addGeneratedScheme: !isDev }],
     [
       "expo-splash-screen",
       {
@@ -82,14 +87,13 @@ const config: ExpoConfig = {
         },
       },
     ],
-    "./plugins/withNotificationChronometer.cjs",
   ],
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
   },
   extra: {
-    isDevelopmentBuild,
+    appVariant: variant,
     eas: {
       projectId: "9a46088f-88a3-4fa5-a31f-8d55729af0fc",
     },

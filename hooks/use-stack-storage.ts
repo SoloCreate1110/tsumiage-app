@@ -1,3 +1,5 @@
+import { stopPomodoroStatus } from "@/lib/pomodoro-status";
+import { cancelPomodoroNotifications } from "@/lib/pomodoro-notifications";
 ﻿/**
  * 遨阪∩荳翫￡繝・・繧ｿ縺ｮ豌ｸ邯壼喧繝輔ャ繧ｯ
  */
@@ -21,7 +23,6 @@ const RECORDS_KEY = "stack_records";
 const DAILY_NOTES_KEY = "stack_daily_notes";
 const DEFAULT_REMINDER_TIME = "20:00";
 const MAX_REMINDER_SLOTS = 5;
-const DAY_CUTOFF_HOUR = 5;
 
 const buildDefaultReminderSlots = (): ReminderSlot[] =>
   Array.from({ length: MAX_REMINDER_SLOTS }, (_, index) => ({
@@ -54,7 +55,7 @@ const normalizeRecordDate = (value: string, createdAt?: string): string => {
     const created = new Date(createdAt);
     if (!Number.isNaN(created.getTime())) {
       const adjusted = new Date(created);
-      if (adjusted.getHours() < DAY_CUTOFF_HOUR) {
+      if (adjusted.getHours() < 6) {
         adjusted.setDate(adjusted.getDate() - 1);
       }
       adjusted.setHours(0, 0, 0, 0);
@@ -267,6 +268,8 @@ function useStackStorageInternal() {
   // 鬆・岼繧貞炎髯､
   const deleteItem = useCallback(
     async (id: string) => {
+      await Promise.all([stopPomodoroStatus(id), cancelPomodoroNotifications(id)]);
+      await AsyncStorage.multiRemove([`pomodoro_state_${id}`, `timer_mode_${id}`]);
       const newItems = items.filter((item) => item.id !== id);
       const newRecords = records.filter((record) => record.itemId !== id);
       await Promise.all([saveItems(newItems), saveRecords(newRecords)]);
