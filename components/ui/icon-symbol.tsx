@@ -38,6 +38,7 @@ const MAPPING = {
   "chevron.up": "keyboard-arrow-up",
   "chevron.down": "keyboard-arrow-down",
   "flame.fill": "local-fire-department",
+  "exclamationmark.triangle.fill": "warning",
   "square.and.arrow.up": "share",
   "quote.bubble": "format-quote",
   // 新規追加アイコン

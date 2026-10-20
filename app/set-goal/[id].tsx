@@ -16,6 +16,7 @@ import { COLOR_OPTIONS, ICON_OPTIONS } from "@/types/stack";
 import {
   Goal,
   calculateDaysRemaining,
+  calculateDaysUntil,
   formatCount,
   formatTime,
   getCountUnitLabel,
@@ -56,12 +57,12 @@ export default function SetGoalModal() {
   useEffect(() => {
     if (target && deadline && item) {
       const targetVal = parseInt(target, 10);
-      const days = calculateDaysRemaining(deadline);
+      const daysUntil = calculateDaysUntil(deadline);
       const current = item.totalValue || 0;
       const remaining = Math.max(0, targetVal - current);
 
-      if (days > 0) {
-        setDailyPace(Math.ceil(remaining / days));
+      if (daysUntil > 0) {
+        setDailyPace(Math.ceil(remaining / daysUntil));
       } else {
         setDailyPace(remaining); // If today is deadline, do it all
       }
@@ -149,6 +150,8 @@ export default function SetGoalModal() {
 
   const unit = item.type === "time" ? "秒" : getCountUnitLabel(item);
   const daysRemaining = deadline ? calculateDaysRemaining(deadline) : null;
+  const daysUntilDeadline = deadline ? calculateDaysUntil(deadline) : null;
+  const isDeadlinePassed = daysUntilDeadline !== null && daysUntilDeadline < 0;
   const currentTotal = item.totalValue || 0;
 
   return (
@@ -249,27 +252,52 @@ export default function SetGoalModal() {
 
         {/* Simulation / Feedback Section */}
         {daysRemaining !== null && dailyPace !== null && (
-          <View style={[styles.feedbackContainer, { backgroundColor: colors.tint + "10", borderColor: colors.tint }]}>
+          <View
+            style={[
+              styles.feedbackContainer,
+              {
+                backgroundColor: (isDeadlinePassed ? colors.error : colors.tint) + "10",
+                borderColor: isDeadlinePassed ? colors.error : colors.tint,
+              },
+            ]}
+          >
             <View style={{ flexDirection: 'row', gap: Spacing.s, marginBottom: Spacing.s }}>
-              <IconSymbol name="flame.fill" size={24} color={colors.tint} />
-              <ThemedText type="defaultSemiBold" style={{ color: colors.tint }}>
+              <IconSymbol
+                name={isDeadlinePassed ? "exclamationmark.triangle.fill" : "flame.fill"}
+                size={24}
+                color={isDeadlinePassed ? colors.error : colors.tint}
+              />
+              <ThemedText
+                type="defaultSemiBold"
+                style={{ color: isDeadlinePassed ? colors.error : colors.tint }}
+              >
                 プラン
               </ThemedText>
             </View>
 
             <ThemedText style={{ color: colors.text }}>
-              期限まであと <ThemedText type="defaultSemiBold">{daysRemaining}日</ThemedText> 日です。            </ThemedText>
+              {isDeadlinePassed ? (
+                "期限が過ぎています。"
+              ) : (
+                <>
+                  期限まであと <ThemedText type="defaultSemiBold">{daysRemaining}日</ThemedText> 日です。
+                </>
+              )}
+            </ThemedText>
 
             <View style={{ marginVertical: Spacing.s, padding: Spacing.m, backgroundColor: colors.card, borderRadius: BorderRadius.card }}>
               <ThemedText style={{ textAlign: "center", color: colors.textSecondary, fontSize: 12 }}>
-                1日あたりの目安</ThemedText>
+                {isDeadlinePassed ? "未達成分" : "1日あたりの目安"}</ThemedText>
               <ThemedText style={{ textAlign: "center", fontSize: 24, fontWeight: "bold", color: colors.text }}>
                 {item.type === "time" ? formatTime(dailyPace) : formatCount(dailyPace, unit)}
               </ThemedText>
             </View>
 
             <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-              このペースで続けると達成できます。</ThemedText>
+              {isDeadlinePassed
+                ? "期限を変更するか、目標値を見直してください。"
+                : "このペースで続けると達成できます。"}
+            </ThemedText>
           </View>
         )}
 

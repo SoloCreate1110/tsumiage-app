@@ -37,6 +37,8 @@ export interface StackItem {
   totalValue: number;
   unitLabel?: string;
   pomodoroAutoSwitchBreak?: boolean;
+  pomodoroWorkMinutes?: number;
+  pomodoroBreakMinutes?: number;
   goal?: Goal;
   reminder?: ReminderSetting;
   reminderSlots?: ReminderSlot[];
@@ -186,6 +188,14 @@ export function toDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function parseDateOnly(dateString: string): Date {
+  const [year, month, day] = dateString.split("-").map((part) => parseInt(part, 10));
+  if (!Number.isNaN(year) && !Number.isNaN(month) && !Number.isNaN(day)) {
+    return new Date(year, month - 1, day);
+  }
+  return new Date(dateString);
+}
+
 // UUID-ish
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2);
@@ -242,11 +252,16 @@ export function calculatePeriodTotal(
 
 // Days remaining to target date
 export function calculateDaysRemaining(targetDate: string): number {
-  const target = new Date(targetDate);
+  return Math.max(0, calculateDaysUntil(targetDate));
+}
+
+// Signed day difference to target date. Past dates return negative values.
+export function calculateDaysUntil(targetDate: string): number {
+  const target = parseDateOnly(targetDate);
   const today = getTodayDate();
   target.setHours(0, 0, 0, 0);
 
   const diffTime = target.getTime() - today.getTime();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return Math.max(0, diffDays);
+  return diffDays;
 }

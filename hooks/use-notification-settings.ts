@@ -1,8 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
+import { preparePomodoroNotificationChannel } from "@/lib/pomodoro-notifications";
+import { foregroundNotificationBehavior } from "@/lib/notification-behavior";
+import { stopPomodoroStatus } from "@/lib/pomodoro-status";
 import { Platform } from "react-native";
 import { useEffect, useState } from "react";
+
+const subscribers = new Set<(settings: NotificationSettings) => void>();
 
 const NOTIFICATION_SETTINGS_KEY = "notification_settings";
 
@@ -18,13 +23,7 @@ const isExpoGo = Constants.executionEnvironment === "storeClient";
 const notificationsUnsupported = isExpoGo || Platform.OS === "web";
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => foregroundNotificationBehavior(notification.request.content.data),
 });
 
 export function useNotificationSettings() {
@@ -33,8 +32,10 @@ export function useNotificationSettings() {
   const [permissionStatus, setPermissionStatus] = useState<string>("undetermined");
 
   useEffect(() => {
+    subscribers.add(setSettings);
     void loadSettings();
     void checkPermission();
+    return () => { subscribers.delete(setSettings); };
   }, []);
 
   const loadSettings = async () => {
@@ -56,7 +57,7 @@ export function useNotificationSettings() {
   const saveSettings = async (nextSettings: NotificationSettings) => {
     try {
       await AsyncStorage.setItem(NOTIFICATION_SETTINGS_KEY, JSON.stringify(nextSettings));
-      setSettings(nextSettings);
+      subscribers.forEach(subscriber => subscriber(nextSettings));
     } catch (error) {
       console.error("Failed to save notification settings:", error);
     }
@@ -73,6 +74,7 @@ export function useNotificationSettings() {
 
   const requestPermission = async (): Promise<boolean> => {
     if (notificationsUnsupported) return false;
+    await preparePomodoroNotificationChannel();
     const { status } = await Notifications.requestPermissionsAsync();
     setPermissionStatus(status);
     return status === "granted";
@@ -88,10 +90,11 @@ export function useNotificationSettings() {
   };
 
   const disableNotification = async () => {
+    await saveSettings({ enabled: false });
+    await stopPomodoroStatus();
     if (!notificationsUnsupported) {
       await Notifications.cancelAllScheduledNotificationsAsync();
     }
-    await saveSettings({ enabled: false });
   };
 
   return {

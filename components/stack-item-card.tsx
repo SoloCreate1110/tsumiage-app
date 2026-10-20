@@ -68,7 +68,7 @@ const StackItemCardComponent = ({
 
   return (
     <Pressable onPress={onPress} onLongPress={onLongPress} disabled={!onPress}>
-      {({ pressed, hovered }) => (
+      {({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => (
         <Animated.View
           style={[
             styles.card,

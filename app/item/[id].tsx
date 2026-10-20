@@ -37,9 +37,11 @@ import { BorderRadius, Colors, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useStackStorage } from "@/hooks/use-stack-storage";
 import { usePomodoroTimer } from "@/hooks/use-pomodoro-timer";
+import { useTimerMode } from "@/hooks/use-timer-mode";
 import {
   calculateGoalProgress,
   calculateDaysRemaining,
+  calculateDaysUntil,
   formatCount,
   formatDate,
   formatTime,
@@ -49,6 +51,7 @@ import {
   getCountUnitLabel,
   StackRecord,
 } from "@/types/stack";
+import { supportsPomodoroStatus, updatePomodoroStatus, stopPomodoroStatus, ensurePomodoroAlarmPermission } from "@/lib/pomodoro-status";
 import { useNotificationSettings } from "@/hooks/use-notification-settings";
 import { useSound } from "@/hooks/use-sound";
 import { cancelItemReminders, scheduleItemReminders } from "@/lib/item-reminders";
@@ -84,7 +87,7 @@ export default function ItemDetailScreen() {
 
   const item = useMemo(() => items.find((i) => i.id === id), [items, id]);
   const isExpoGo = Constants.executionEnvironment === "storeClient";
-  const { settings: notificationSettings, requestPermission } = useNotificationSettings();
+  const { settings: notificationSettings, loading: notificationsLoading, enableNotification, requestPermission } = useNotificationSettings();
 
   useFocusEffect(
     useCallback(() => {
@@ -174,7 +177,7 @@ export default function ItemDetailScreen() {
   const [isRunning, setIsRunning] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [showPomodoroMode, setShowPomodoroMode] = useState(false);
+  const { showPomodoroMode, setShowPomodoroMode, modeHydrated } = useTimerMode(id);
   const [autoSwitchBreak, setAutoSwitchBreak] = useState(true);
   const timerStartRef = useRef<number | null>(null);
   const TIMER_STATE_KEY = id ? `timer_state_${id}` : null;
@@ -275,21 +278,22 @@ export default function ItemDetailScreen() {
   );
 
   // 繝昴Δ繝峨・繝ｭ繧ｿ繧､繝槭・終了凾縺ｫ譎る俣繧貞刈邂・
-  const WORK_DURATION = 25 * 60; // 25蛻・
+  const workMinutes = item?.pomodoroWorkMinutes ?? 25;
+  const breakMinutes = item?.pomodoroBreakMinutes ?? 5;
 
-  const handlePomodoroComplete = useCallback(async () => {
+  const handlePomodoroComplete = useCallback(async (elapsedSeconds: number) => {
     if (id) {
       // 25蛻・・菴懈･ｭ縺悟ｮ御ｺ・＠縺溘ｉ縲・5蛻・ｒ險倬鹸縺ｫ霑ｽ蜉
       const note = sessionNote.trim() ? sessionNote.trim() : undefined;
-      await addRecord(id, WORK_DURATION, note);
+      await addRecord(id, elapsedSeconds, note);
       if (note) setSessionNote("");
-      void playComplete();
+      if (!notificationSettings.enabled || Platform.OS === "web" || isExpoGo) void playComplete();
     }
-  }, [id, addRecord, playComplete, sessionNote]);
+  }, [id, addRecord, playComplete, sessionNote, notificationSettings.enabled]);
 
   const handlePomodoroBreakComplete = useCallback(async () => {
-    void playComplete();
-  }, [playComplete]);
+    if (!notificationSettings.enabled || Platform.OS === "web" || isExpoGo) void playComplete();
+  }, [playComplete, notificationSettings.enabled]);
 
   const handlePomodoroStop = useCallback(async (elapsedSeconds: number) => {
     if (id && elapsedSeconds > 0) {
@@ -304,20 +308,34 @@ export default function ItemDetailScreen() {
     onWorkComplete: handlePomodoroComplete,
     onBreakComplete: handlePomodoroBreakComplete,
     onStop: handlePomodoroStop,
-    autoSwitchBreak,
+    autoSwitchBreak: item?.pomodoroAutoSwitchBreak ?? autoSwitchBreak,
+    ready: !loading && !!item,
+    workDuration: workMinutes * 60,
+    breakDuration: breakMinutes * 60,
     storageKey: id ? `pomodoro_state_${id}` : null,
   });
 
   useEffect(() => {
-    if (pomodoroTimer.state.phase !== "idle") {
+    if (modeHydrated && pomodoroTimer.state.phase !== "idle") {
       setShowPomodoroMode(true);
     }
-  }, [pomodoroTimer.state.phase]);
+  }, [pomodoroTimer.state.phase, modeHydrated, setShowPomodoroMode]);
 
   useEffect(() => {
-    if (!id || !item) return;
+    if (!id || !item || notificationsLoading || !pomodoroTimer.isHydrated) return;
 
+    let cancelled = false;
     const syncPomodoroNotifications = async () => {
+      if (supportsPomodoroStatus) {
+        await cancelPomodoroNotifications(id);
+        if (cancelled) return;
+        if (notificationSettings.enabled && pomodoroTimer.state.phase !== "idle") {
+          await updatePomodoroStatus(id, item.name, pomodoroTimer.state, autoSwitchBreak);
+        } else {
+          await stopPomodoroStatus(id);
+        }
+        return;
+      }
       if (!notificationSettings.enabled || !pomodoroTimer.state.isRunning || pomodoroTimer.state.phase === "idle") {
         await cancelPomodoroNotifications(id);
         return;
@@ -327,19 +345,32 @@ export default function ItemDetailScreen() {
         id,
         item.name,
         pomodoroTimer.state.phase,
-        pomodoroTimer.state.timeLeft,
-        autoSwitchBreak
+        pomodoroTimer.phaseEndsAt!,
+        autoSwitchBreak,
+        pomodoroTimer.state.workDuration ?? workMinutes * 60,
+        pomodoroTimer.state.breakDuration ?? breakMinutes * 60
       );
     };
 
-    void syncPomodoroNotifications();
+    void syncPomodoroNotifications().catch((error) => {
+      console.error("Failed to schedule pomodoro notifications:", error);
+    });
+    return () => { cancelled = true; };
   }, [
     id,
-    item,
+    item?.name,
+    pomodoroTimer.isHydrated,
+    notificationsLoading,
+    workMinutes,
+    breakMinutes,
+    pomodoroTimer.state.workDuration,
+    pomodoroTimer.state.breakDuration,
     notificationSettings.enabled,
     pomodoroTimer.state.isRunning,
     pomodoroTimer.state.phase,
-    pomodoroTimer.state.timeLeft,
+    pomodoroTimer.phaseEndsAt,
+    pomodoroTimer.state.totalTime,
+    pomodoroTimer.state.isRunning ? null : pomodoroTimer.state.timeLeft,
     autoSwitchBreak,
   ]);
 
@@ -528,8 +559,12 @@ export default function ItemDetailScreen() {
   const goalDaysRemaining = goalDeadline
     ? calculateDaysRemaining(goalDeadline)
     : null;
+  const goalDaysUntilDeadline = goalDeadline
+    ? calculateDaysUntil(goalDeadline)
+    : null;
+  const isGoalDeadlinePassed = goalDaysUntilDeadline !== null && goalDaysUntilDeadline < 0;
   const goalTodayTarget =
-    goalTarget && goalDaysRemaining !== null
+    goalTarget && goalDaysRemaining !== null && !isGoalDeadlinePassed
       ? Math.ceil(goalRemaining / Math.max(goalDaysRemaining, 1))
       : null;
 
@@ -632,7 +667,7 @@ export default function ItemDetailScreen() {
                   {showPomodoroMode ? "ポモドーロ" : "通常タイマー"}
                 </ThemedText>
                 <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-                  {showPomodoroMode ? "25分集中 + 5分休憩" : "経過時間をそのまま積み上げ"}
+                  {showPomodoroMode ? `${workMinutes}分集中 + ${breakMinutes}分休憩` : "経過時間をそのまま積み上げ"}
                 </ThemedText>
               </View>
               <Pressable
@@ -644,7 +679,7 @@ export default function ItemDetailScreen() {
                     opacity: isRunning || pomodoroTimer.state.phase !== "idle" ? 0.5 : 1,
                   },
                 ]}
-                disabled={isRunning || pomodoroTimer.state.phase !== "idle"}
+                disabled={!modeHydrated || isRunning || pomodoroTimer.state.phase !== "idle"}
                 onPress={() => {
                   setShowPomodoroMode((prev) => !prev);
                   void playClick();
@@ -738,7 +773,7 @@ export default function ItemDetailScreen() {
               <>
                 <View style={[styles.pomodoroDisplay, { backgroundColor: colors.card }]}>
                   <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-                    {pomodoroTimer.state.phase === "work" ? "作業中" : "休憩中"}
+                    {pomodoroTimer.state.phase === "idle" ? "準備完了" : pomodoroTimer.state.phase === "work" ? "作業中" : "休憩中"}
                   </ThemedText>
                   <ThemedText style={styles.pomodoroTime}>
                     {pomodoroTimer.formatTime(pomodoroTimer.state.timeLeft)}
@@ -747,6 +782,28 @@ export default function ItemDetailScreen() {
                     セッション: {pomodoroTimer.state.sessionsCompleted}
                   </ThemedText>
                 </View>
+
+                {pomodoroTimer.state.phase === "idle" && (
+                  <View style={{ gap: 12, padding: 16, backgroundColor: colors.card, borderRadius: 12 }}>
+                    {(["work", "break"] as const).map((phase) => {
+                      const minutes = phase === "work" ? workMinutes : breakMinutes;
+                      const field = phase === "work" ? "pomodoroWorkMinutes" : "pomodoroBreakMinutes";
+                      return (
+                        <View key={phase} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                          <ThemedText>{phase === "work" ? "集中時間" : "休憩時間"}: {minutes}分</ThemedText>
+                          <View style={{ flexDirection: "row", gap: 20 }}>
+                            <Pressable accessibilityLabel={`${phase === "work" ? "集中" : "休憩"}時間を1分短くする`} disabled={minutes <= 1} onPress={() => void updateItem(item.id, { [field]: Math.max(1, minutes - 1) })}>
+                              <ThemedText style={{ fontSize: 24 }}>−</ThemedText>
+                            </Pressable>
+                            <Pressable accessibilityLabel={`${phase === "work" ? "集中" : "休憩"}時間を1分長くする`} disabled={minutes >= 180} onPress={() => void updateItem(item.id, { [field]: Math.min(180, minutes + 1) })}>
+                              <ThemedText style={{ fontSize: 24 }}>＋</ThemedText>
+                            </Pressable>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
 
                 <View style={[styles.pomodoroOptions, { backgroundColor: colors.card }]}>
                   <ThemedText style={{ color: colors.textSecondary }}>
@@ -765,15 +822,35 @@ export default function ItemDetailScreen() {
                   />
                 </View>
 
+                {!notificationSettings.enabled && Platform.OS !== "web" && !isExpoGo && (
+                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                    スリープ中に音でお知らせするには、設定で通知を許可してください。
+                  </ThemedText>
+                )}
+                <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                  {Platform.OS === "web"
+                    ? "画面を開き直すと、実際の経過時間を反映します。"
+                    : supportsPomodoroStatus
+                      ? "スリープ中も通知欄・ロック画面で経過時間を確認できます。集中・休憩の終了時に音でお知らせします。"
+                      : "スリープ中も計測します。通知は次の48回の切替まで予約され、この画面を開くと更新されます。"}
+                </ThemedText>
+
                 <View style={styles.timerButtons}>
                   {!pomodoroTimer.state.isRunning ? (
                     <Pressable
                       style={[styles.mainButton, { backgroundColor: item.color }]}
+                      disabled={!modeHydrated || !pomodoroTimer.isHydrated || notificationsLoading}
                       onPress={async () => {
-                        if (
-                          pomodoroTimer.state.phase !== "idle" &&
-                          pomodoroTimer.state.timeLeft < pomodoroTimer.state.totalTime
-                        ) {
+                        if (!notificationSettings.enabled && Platform.OS !== "web" && !isExpoGo) {
+                          if (!await enableNotification()) return;
+                        }
+                        if (notificationSettings.enabled || (Platform.OS !== "web" && !isExpoGo)) {
+                          if (!await ensurePomodoroAlarmPermission()) {
+                            Alert.alert("アラームの許可", "スリープ中も時間どおりに通知するため、設定画面で「アラームとリマインダー」を許可してから、もう一度開始してください。");
+                            return;
+                          }
+                        }
+                        if (pomodoroTimer.state.phase !== "idle") {
                           pomodoroTimer.resumePomodoro();
                         } else {
                           pomodoroTimer.startPomodoro();
@@ -783,8 +860,7 @@ export default function ItemDetailScreen() {
                     >
                       <IconSymbol name="play.fill" size={28} color="#fff" />
                       <ThemedText style={styles.buttonText}>
-                        {pomodoroTimer.state.phase !== "idle" &&
-                        pomodoroTimer.state.timeLeft < pomodoroTimer.state.totalTime
+                        {pomodoroTimer.state.phase !== "idle"
                           ? "再開"
                           : "開始"}
                       </ThemedText>
@@ -807,7 +883,6 @@ export default function ItemDetailScreen() {
                       onPress={async () => {
                         stopAllSounds();
                         pomodoroTimer.stopPomodoro();
-                        setShowPomodoroMode(false);
                         void playBeep();
                       }}
                   >
@@ -915,7 +990,7 @@ export default function ItemDetailScreen() {
                 </ThemedText>
                 {goalDaysRemaining !== null && (
                   <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-                    残り日数: {goalDaysRemaining}日
+                    {isGoalDeadlinePassed ? "期限が過ぎています" : `残り日数: ${goalDaysRemaining}日`}
                   </ThemedText>
                 )}
               </View>
@@ -940,18 +1015,24 @@ export default function ItemDetailScreen() {
                 </ThemedText>
               </View>
 
-              {goalTodayTarget !== null && (
+              {goalTodayTarget !== null || isGoalDeadlinePassed ? (
                 <View style={styles.goalItem}>
-                  <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-                    今日の目安: {formatGoalValue(goalTodayTarget)}
-                  </ThemedText>
+                  {goalTodayTarget !== null ? (
+                    <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                      今日の目安: {formatGoalValue(goalTodayTarget)}
+                    </ThemedText>
+                  ) : (
+                    <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
+                      期限を変更するか、目標を見直してください
+                    </ThemedText>
+                  )}
                   {goalRemaining === 0 && (
                     <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
                       目標達成済み
                     </ThemedText>
                   )}
                 </View>
-              )}
+              ) : null}
             </View>
           )}
         </View>

@@ -1,3 +1,5 @@
+import { stopPomodoroStatus } from "@/lib/pomodoro-status";
+import { cancelPomodoroNotifications } from "@/lib/pomodoro-notifications";
 ﻿/**
  * 遨阪∩荳翫￡繝・・繧ｿ縺ｮ豌ｸ邯壼喧繝輔ャ繧ｯ
  */
@@ -266,6 +268,8 @@ function useStackStorageInternal() {
   // 鬆・岼繧貞炎髯､
   const deleteItem = useCallback(
     async (id: string) => {
+      await Promise.all([stopPomodoroStatus(id), cancelPomodoroNotifications(id)]);
+      await AsyncStorage.multiRemove([`pomodoro_state_${id}`, `timer_mode_${id}`]);
       const newItems = items.filter((item) => item.id !== id);
       const newRecords = records.filter((record) => record.itemId !== id);
       await Promise.all([saveItems(newItems), saveRecords(newRecords)]);
